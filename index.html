@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Save File Decryptor</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://pyscript.net" />
+    <script type="module" src="https://pyscript.net"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .container { max-width: 600px; margin: auto; border: 1px solid #ccc; padding: 20px; border-radius: 8px; }
+        #status { color: blue; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Decrypt Profile.Save</h1>
+        <p>Select your <b>Profile.Save</b> file to decrypt it to JSON.</p>
+        
+        <input type="file" id="file-upload" accept=".Save">
+        <div id="status">Ready.</div>
+        <div id="output-link"></div>
+    </div>
+
+    <script type="py" config="./pyscript.toml">
+        import js
+        from pyodide.ffi import create_proxy
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC as P
+        from cryptography.hazmat.primitives import hashes as H
+        from cryptography.hazmat.primitives.ciphers import Cipher as C, algorithms as A, modes as M
+        from cryptography.hazmat.backends import default_backend as D
+        import zlib as Z
+
+        async def process_file(event):
+            status = js.document.getElementById("status")
+            status.innerHTML = "Processing..."
+            
+            file_list = event.target.files
+            if len(file_list) == 0:
+                return
+
+            file = file_list.item(0)
+            array_buffer = await file.arrayBuffer()
+            b = array_buffer.to_bytes()
+
+            try:
+                # Your Decryption Logic
+                s, e = b[52:76], b[76:]
+                k = P(algorithm=H.SHA1(), length=32, salt=s, iterations=10, backend=D()).derive(b'11')
+                r = C(A.AES(k[16:32]), M.CBC(k[:16]), backend=D()).decryptor()
+                o = r.update(e) + r.finalize()
+                decrypted_data = Z.decompress(o)
+
+                # Create Download Link
+                blob = js.Blob.new([decrypted_data], {type: "application/json"})
+                url = js.URL.createObjectURL(blob)
+                
+                link_div = js.document.getElementById("output-link")
+                link_div.innerHTML = f'<br><a href="{url}" download="Decrypted_Profile_5.json">Click here to download JSON</a>'
+                status.innerHTML = "Success!"
+            except Exception as err:
+                status.innerHTML = f"Error: {str(err)}"
+
+        # Bind the file upload event
+        upload_element = js.document.getElementById("file-upload")
+        upload_element.addEventListener("change", create_proxy(process_file))
+    </script>
+</body>
+</html>
