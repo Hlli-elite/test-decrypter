@@ -715,6 +715,9 @@ function populateFields() {
 }
 
 function collectFields() {
+  // Flush whichever heavy tab is currently open (its inputs are live in DOM)
+  if (HEAVY_TABS.has(currentTab)) flushHeavy(currentTab);
+  // Then collect the static data-key inputs (currency tab etc.)
   document.querySelectorAll('[data-key]').forEach(inp => {
     const raw = inp.value.trim();
     if (raw === '') return;
@@ -724,106 +727,180 @@ function collectFields() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BUILD: POWERS
+// TABS  — lazy: each panel renders only when first visited,
+//         heavy panels (instas, maps, achievements) are wiped on leave
+// ═══════════════════════════════════════════════════════════════════
+
+// Panels that are cheap to keep alive vs ones we wipe on every switch
+const HEAVY_TABS = new Set(['instas', 'achievements', 'maps']);
+let currentTab = 'currency';
+
+function switchTab(name) {
+  // Flush edits out of any live inputs before tearing down
+  if (HEAVY_TABS.has(currentTab)) flushHeavy(currentTab);
+
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  currentTab = name;
+
+  // Lazy-build on first visit (or rebuild after wipe)
+  if (name === 'powers'        && !document.getElementById('powersGrid').children.length) buildPowers();
+  if (name === 'instas')       renderInstaPanel(currentInstaTower);
+  if (name === 'achievements') renderAch();
+  if (name === 'maps')         renderMaps();
+}
+
+// Read inputs back into profile before we destroy their DOM nodes
+function flushHeavy(tab) {
+  if (tab === 'instas') {
+    document.querySelectorAll('#instaPanels input').forEach(inp => {
+      const tKey = inp.dataset.tower, cp = inp.dataset.cp;
+      if (!tKey || !cp) return;
+      const newQty = parseInt(inp.value) || 0;
+      const [p1,p2,p3] = cp.split('-').map(Number);
+      const isNew = inp.dataset.isnew === 'true';
+      const newEncoded = encodeCrosspath(newQty, p1, p2, p3, isNew);
+      if (!profile.instaTowers) profile.instaTowers = {};
+      if (!profile.instaTowers[tKey]) profile.instaTowers[tKey] = {};
+      const oldKey = inp.dataset.encoded;
+      if (oldKey && oldKey !== String(newEncoded)) delete profile.instaTowers[tKey][oldKey];
+      profile.instaTowers[tKey][newEncoded] = newQty;
+      inp.dataset.encoded = newEncoded;
+    });
+    document.getElementById('instaPanels').innerHTML = '';
+  }
+  if (tab === 'achievements') {
+    document.querySelectorAll('#achGrid input').forEach(inp => {
+      if (!profile.achievementProgress) profile.achievementProgress = {};
+      profile.achievementProgress[inp.dataset.ach] = parseInt(inp.value) || 0;
+    });
+    document.getElementById('achGrid').innerHTML = '';
+  }
+  if (tab === 'maps') {
+    document.querySelectorAll('#mapsBody input').forEach(inp => {
+      const m = inp.dataset.map, d = inp.dataset.diff, k = inp.dataset.mode;
+      if (!m) return;
+      if (!profile.mapInfo) profile.mapInfo = {};
+      if (!profile.mapInfo.maps) profile.mapInfo.maps = {};
+      if (!profile.mapInfo.maps[m]) profile.mapInfo.maps[m] = {};
+      if (!profile.mapInfo.maps[m].difficult) profile.mapInfo.maps[m].difficult = {};
+      if (!profile.mapInfo.maps[m].difficult[d]) profile.mapInfo.maps[m].difficult[d] = {};
+      profile.mapInfo.maps[m].difficult[d][k] = parseInt(inp.value) || 0;
+    });
+    document.getElementById('mapsBody').innerHTML = '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BUILD: POWERS  (14 inputs — kept alive, fine)
 // ═══════════════════════════════════════════════════════════════════
 
 function buildPowers() {
   const grid = document.getElementById('powersGrid');
   grid.innerHTML = '';
+  // Single delegated listener on the grid
+  grid.addEventListener('change', e => {
+    const inp = e.target; if (!inp.dataset.power) return;
+    if (!profile.powersData) profile.powersData = {};
+    if (!profile.powersData[inp.dataset.power]) profile.powersData[inp.dataset.power] = {};
+    profile.powersData[inp.dataset.power].quantity = parseInt(inp.value) || 0;
+  });
   for (const p of POWERS) {
     const qty = profile.powersData?.[p.key]?.quantity ?? 0;
     const row = document.createElement('div');
     row.className = 'power-row';
     row.innerHTML = `<label>${p.name}</label><input type="number" min="0" value="${qty}" data-power="${p.key}">`;
     grid.appendChild(row);
-    row.querySelector('input').addEventListener('change', e => {
-      if (!profile.powersData) profile.powersData = {};
-      if (!profile.powersData[p.key]) profile.powersData[p.key] = {};
-      profile.powersData[p.key].quantity = parseInt(e.target.value) || 0;
-    });
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BUILD: INSTA-MONKEYS
+// BUILD: INSTA-MONKEYS  — one tower at a time, torn down on tab leave
 // ═══════════════════════════════════════════════════════════════════
 
-function buildInstas() {
-  const tabsEl   = document.getElementById('instaTowerTabs');
-  const panelsEl = document.getElementById('instaPanels');
-  tabsEl.innerHTML = ''; panelsEl.innerHTML = '';
+let currentInstaTower = TOWERS[0][0];
 
+function buildInstaTabs() {
+  // Build tabs only (no panels yet)
+  const tabsEl = document.getElementById('instaTowerTabs');
+  tabsEl.innerHTML = '';
   for (const [tKey, tName] of TOWERS) {
-    // Tab
     const tab = document.createElement('div');
-    tab.className = 'insta-tab';
+    tab.className = 'insta-tab' + (tKey === currentInstaTower ? ' active' : '');
     tab.textContent = tName;
     tab.dataset.tower = tKey;
     tab.onclick = () => activateInstaTab(tKey);
     tabsEl.appendChild(tab);
-
-    // Panel
-    const panel = document.createElement('div');
-    panel.className = 'insta-panel';
-    panel.id = 'insta-panel-' + tKey;
-
-    // Build a lookup: "p1-p2-p3" → {encodedKey, decoded}
-    const towerData = profile.instaTowers?.[tKey] ?? {};
-    const lookup = {};
-    for (const [k, _] of Object.entries(towerData)) {
-      const d = calcCrosspath(parseInt(k));
-      lookup[`${d.path1}-${d.path2}-${d.path3}`] = { encodedKey: k, decoded: d };
-    }
-
-    const grid = document.createElement('div');
-    grid.className = 'insta-grid';
-
-    for (const cp of CROSSPATHS) {
-      const entry = lookup[cp];
-      const qty   = entry ? entry.decoded.quantity : 0;
-
-      const cell  = document.createElement('div');
-      cell.className = 'insta-cell';
-      cell.innerHTML = `<label>${cp}</label><input type="number" min="0" value="${qty}" data-tower="${tKey}" data-cp="${cp}" data-encoded="${entry ? entry.encodedKey : ''}" data-isnew="${entry ? entry.decoded.is_new : false}">`;
-      grid.appendChild(cell);
-
-      const inp = cell.querySelector('input');
-      inp.addEventListener('change', () => {
-        const newQty = parseInt(inp.value) || 0;
-        const [p1,p2,p3] = cp.split('-').map(Number);
-        const isNew = inp.dataset.isnew === 'true';
-        const newEncoded = encodeCrosspath(newQty, p1, p2, p3, isNew);
-
-        if (!profile.instaTowers) profile.instaTowers = {};
-        if (!profile.instaTowers[tKey]) profile.instaTowers[tKey] = {};
-
-        const oldKey = inp.dataset.encoded;
-        if (oldKey) delete profile.instaTowers[tKey][oldKey];
-        profile.instaTowers[tKey][newEncoded] = newQty;
-        inp.dataset.encoded = newEncoded;
-      });
-    }
-    panel.appendChild(grid);
-    panelsEl.appendChild(panel);
   }
-
-  // Activate first
-  activateInstaTab(TOWERS[0][0]);
+  // Delegated listener for all insta inputs
+  const panelsEl = document.getElementById('instaPanels');
+  panelsEl.addEventListener('change', e => {
+    const inp = e.target;
+    const tKey = inp.dataset.tower, cp = inp.dataset.cp;
+    if (!tKey || !cp) return;
+    const newQty = parseInt(inp.value) || 0;
+    const [p1,p2,p3] = cp.split('-').map(Number);
+    const isNew = inp.dataset.isnew === 'true';
+    const newEncoded = encodeCrosspath(newQty, p1, p2, p3, isNew);
+    if (!profile.instaTowers) profile.instaTowers = {};
+    if (!profile.instaTowers[tKey]) profile.instaTowers[tKey] = {};
+    const oldKey = inp.dataset.encoded;
+    if (oldKey && oldKey !== String(newEncoded)) delete profile.instaTowers[tKey][oldKey];
+    profile.instaTowers[tKey][newEncoded] = newQty;
+    inp.dataset.encoded = newEncoded;
+  });
 }
 
 function activateInstaTab(tKey) {
+  // Flush current panel into profile before replacing
+  flushHeavy('instas');
+  currentInstaTower = tKey;
   document.querySelectorAll('.insta-tab').forEach(t => t.classList.toggle('active', t.dataset.tower === tKey));
-  document.querySelectorAll('.insta-panel').forEach(p => p.classList.toggle('active', p.id === 'insta-panel-' + tKey));
+  renderInstaPanel(tKey);
+}
+
+function renderInstaPanel(tKey) {
+  const panelsEl = document.getElementById('instaPanels');
+  panelsEl.innerHTML = '';
+
+  const towerData = profile.instaTowers?.[tKey] ?? {};
+  const lookup = {};
+  for (const k of Object.keys(towerData)) {
+    const d = calcCrosspath(parseInt(k));
+    lookup[`${d.path1}-${d.path2}-${d.path3}`] = { encodedKey: k, decoded: d };
+  }
+
+  // Build fragment — one hit to the DOM
+  const frag = document.createDocumentFragment();
+  const grid = document.createElement('div');
+  grid.className = 'insta-grid';
+
+  for (const cp of CROSSPATHS) {
+    const entry = lookup[cp];
+    const qty   = entry ? entry.decoded.quantity : 0;
+    const cell  = document.createElement('div');
+    cell.className = 'insta-cell';
+    cell.innerHTML = `<label>${cp}</label><input type="number" min="0" value="${qty}" data-tower="${tKey}" data-cp="${cp}" data-encoded="${entry ? entry.encodedKey : ''}" data-isnew="${entry ? entry.decoded.is_new : false}">`;
+    grid.appendChild(cell);
+  }
+  frag.appendChild(grid);
+  panelsEl.appendChild(frag);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BUILD: ACHIEVEMENTS
+// BUILD: ACHIEVEMENTS — rendered on demand, delegated listener
 // ═══════════════════════════════════════════════════════════════════
 
 let achFilter = 'all';
 
-function buildAchievements() {
-  renderAch();
+function initAchListener() {
+  document.getElementById('achGrid').addEventListener('change', e => {
+    const inp = e.target; if (!inp.dataset.ach) return;
+    if (!profile.achievementProgress) profile.achievementProgress = {};
+    profile.achievementProgress[inp.dataset.ach] = parseInt(inp.value) || 0;
+  });
 }
 
 function renderAch() {
@@ -831,86 +908,70 @@ function renderAch() {
   grid.innerHTML = '';
   const ap = profile.achievementProgress ?? {};
 
+  // Build a single fragment — one DOM insertion
+  const frag = document.createDocumentFragment();
   for (const ach of ACHIEVEMENTS) {
-    if (achFilter === 'incomplete') {
-      const current = ap[ach.type] ?? 0;
-      if (current >= ach.goal) continue;
-    }
+    if (achFilter === 'incomplete' && (ap[ach.type] ?? 0) >= ach.goal) continue;
     if (achFilter === 'hidden' && !ach.hidden) continue;
-
     const current = ap[ach.type] ?? 0;
     const row = document.createElement('div');
     row.className = 'ach-row' + (ach.hidden ? ' hidden-ach' : '');
-
-    row.innerHTML = `
-      <div class="ach-info">
-        <div class="ach-name" title="${ach.name}">${ach.name}${ach.hidden ? ' <span style="color:#6a5a00">[hidden]</span>' : ''}</div>
-        <div class="ach-desc" title="${ach.desc}">${ach.desc}</div>
-      </div>
-      <input type="number" min="0" max="${ach.goal}" value="${current}" data-ach="${ach.type}">
-      <span class="ach-max">/ ${ach.goal.toLocaleString()}</span>
-    `;
-    grid.appendChild(row);
-
-    row.querySelector('input').addEventListener('change', e => {
-      if (!profile.achievementProgress) profile.achievementProgress = {};
-      profile.achievementProgress[ach.type] = parseInt(e.target.value) || 0;
-    });
+    row.innerHTML = `<div class="ach-info"><div class="ach-name" title="${ach.name}">${ach.name}${ach.hidden ? ' <span style="color:#6a5a00">[hidden]</span>' : ''}</div><div class="ach-desc" title="${ach.desc}">${ach.desc}</div></div><input type="number" min="0" max="${ach.goal}" value="${current}" data-ach="${ach.type}"><span class="ach-max">/ ${ach.goal.toLocaleString()}</span>`;
+    frag.appendChild(row);
   }
+  grid.appendChild(frag);
 }
 
 function filterAch(f) { achFilter = f; renderAch(); }
 
 function achMaxAll() {
   if (!profile.achievementProgress) profile.achievementProgress = {};
-  for (const ach of ACHIEVEMENTS) {
-    profile.achievementProgress[ach.type] = ach.goal;
-  }
+  for (const ach of ACHIEVEMENTS) profile.achievementProgress[ach.type] = ach.goal;
   renderAch();
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BUILD: MAPS
+// BUILD: MAPS — rendered on demand, delegated listener
 // ═══════════════════════════════════════════════════════════════════
 
 let mapDiffFilter = 'all';
 
-function buildMaps() { renderMaps(); }
+function initMapListener() {
+  document.getElementById('mapsBody').addEventListener('change', e => {
+    const inp = e.target;
+    const m = inp.dataset.map, d = inp.dataset.diff, k = inp.dataset.mode;
+    if (!m) return;
+    if (!profile.mapInfo) profile.mapInfo = {};
+    if (!profile.mapInfo.maps) profile.mapInfo.maps = {};
+    if (!profile.mapInfo.maps[m]) profile.mapInfo.maps[m] = {};
+    if (!profile.mapInfo.maps[m].difficult) profile.mapInfo.maps[m].difficult = {};
+    if (!profile.mapInfo.maps[m].difficult[d]) profile.mapInfo.maps[m].difficult[d] = {};
+    profile.mapInfo.maps[m].difficult[d][k] = parseInt(inp.value) || 0;
+  });
+}
 
 function renderMaps() {
   const tbody = document.getElementById('mapsBody');
   tbody.innerHTML = '';
-
+  const frag = document.createDocumentFragment();
   for (const [tName, dName, diff] of MAPS) {
     if (mapDiffFilter !== 'all' && diff !== mapDiffFilter) continue;
-
     const mapData = profile.mapInfo?.maps?.[tName]?.difficult ?? {};
     const tr = document.createElement('tr');
     tr.dataset.diff = diff;
-
     let html = `<td class="map-name" title="${diff}">${dName}</td>`;
     for (const gm of GAMEMODES) {
       const val = mapData[gm.diff]?.[gm.key] ?? 0;
       html += `<td class="medal-col"><input type="number" min="0" max="4" value="${val}" data-map="${tName}" data-diff="${gm.diff}" data-mode="${gm.key}" style="width:42px"></td>`;
     }
     tr.innerHTML = html;
-    tbody.appendChild(tr);
-
-    tr.querySelectorAll('input').forEach(inp => {
-      inp.addEventListener('change', () => {
-        const m = inp.dataset.map, d = inp.dataset.diff, k = inp.dataset.mode;
-        if (!profile.mapInfo) profile.mapInfo = {};
-        if (!profile.mapInfo.maps) profile.mapInfo.maps = {};
-        if (!profile.mapInfo.maps[m]) profile.mapInfo.maps[m] = {};
-        if (!profile.mapInfo.maps[m].difficult) profile.mapInfo.maps[m].difficult = {};
-        if (!profile.mapInfo.maps[m].difficult[d]) profile.mapInfo.maps[m].difficult[d] = {};
-        profile.mapInfo.maps[m].difficult[d][k] = parseInt(inp.value) || 0;
-      });
-    });
+    frag.appendChild(tr);
   }
+  tbody.appendChild(frag);
 }
 
 function filterMaps(f, btn) {
+  flushHeavy('maps');
   mapDiffFilter = f;
   document.querySelectorAll('.map-filter button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
@@ -920,7 +981,7 @@ function filterMaps(f, btn) {
 function mapsMaxAll() {
   if (!profile.mapInfo) profile.mapInfo = {};
   if (!profile.mapInfo.maps) profile.mapInfo.maps = {};
-  for (const [tName,,] of MAPS) {
+  for (const [tName] of MAPS) {
     if (!profile.mapInfo.maps[tName]) profile.mapInfo.maps[tName] = {};
     if (!profile.mapInfo.maps[tName].difficult) profile.mapInfo.maps[tName].difficult = {};
     for (const gm of GAMEMODES) {
@@ -929,17 +990,6 @@ function mapsMaxAll() {
     }
   }
   renderMaps();
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// TABS
-// ═══════════════════════════════════════════════════════════════════
-
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
-  document.getElementById('tab-' + name).classList.add('active');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1012,11 +1062,12 @@ async function loadFile(file) {
     profile = await decryptSave(await file.arrayBuffer());
     document.getElementById('uploadArea').style.display = 'none';
     document.getElementById('editor').style.display = 'block';
-    populateFields();
-    buildPowers();
-    buildInstas();
-    buildAchievements();
-    buildMaps();
+    currentTab = 'currency';
+    populateFields();  // currency tab is shown first — static HTML inputs
+    buildInstaTabs();  // just tower tab buttons, no panels yet
+    initAchListener(); // one delegated listener on the grid container
+    initMapListener(); // one delegated listener on the tbody
+    // Powers, instas, achievements, maps all render lazily on first tab visit
     setStatus('ok', 'Loaded: ' + file.name);
   } catch(e) {
     setStatus('err', 'Decryption failed: ' + e.message);
