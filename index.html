@@ -6,258 +6,711 @@
 <title>BTD6 Save Editor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 <style>
-  body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; max-width: 800px; margin: 0 auto; padding: 24px; }
-  h1 { color: #f0c040; margin-bottom: 4px; }
-  h2 { color: #9cdcfe; font-size: 14px; margin: 24px 0 8px; border-bottom: 1px solid #333; padding-bottom: 4px; }
-  p  { font-size: 13px; color: #888; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; max-width: 1000px; margin: 0 auto; }
+  h1  { color: #f0c040; margin-bottom: 4px; font-size: 20px; }
+  h2  { color: #9cdcfe; font-size: 13px; margin: 20px 0 8px; border-bottom: 1px solid #333; padding-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+  h3  { color: #ce9178; font-size: 12px; margin: 12px 0 6px; }
+  p, small { font-size: 12px; color: #888; }
 
-  /* Upload */
-  #uploadArea { border: 2px dashed #444; border-radius: 6px; padding: 32px; text-align: center; margin: 16px 0; cursor: pointer; transition: border-color 0.2s; }
+  /* ── Upload ── */
+  #uploadArea { border: 2px dashed #444; border-radius: 6px; padding: 28px; text-align: center; margin: 14px 0; cursor: pointer; transition: border-color 0.2s; }
   #uploadArea:hover, #uploadArea.drag { border-color: #f0c040; }
-  #uploadArea p { color: #888; margin: 0 0 12px; }
+  #uploadArea p { margin-bottom: 10px; }
   #fileInput { display: none; }
 
-  /* Status */
+  /* ── Status ── */
   #status { font-size: 12px; padding: 8px 12px; border-radius: 4px; margin: 8px 0; display: none; }
-  #status.info { display: block; background: #1a3a5c; color: #9cdcfe; }
-  #status.ok   { display: block; background: #1a3a2a; color: #4ec994; }
-  #status.err  { display: block; background: #3a1a1a; color: #f47474; }
+  #status.info { display:block; background:#1a3a5c; color:#9cdcfe; }
+  #status.ok   { display:block; background:#1a3a2a; color:#4ec994; }
+  #status.err  { display:block; background:#3a1a1a; color:#f47474; }
 
-  /* Editor */
+  /* ── Editor ── */
   #editor { display: none; }
 
-  /* Fields */
-  .field { margin-bottom: 12px; }
-  .field label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
-  .field input[type="number"],
-  .field input[type="text"] {
+  /* ── Tabs ── */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; }
+  .tab  { font-family: monospace; font-size: 12px; padding: 6px 14px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; cursor: pointer; color: #888; }
+  .tab:hover { border-color: #888; color: #d4d4d4; }
+  .tab.active { background: #0f3a5c; border-color: #9cdcfe; color: #9cdcfe; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Fields ── */
+  .field { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+  .field label { font-size: 12px; color: #888; min-width: 200px; flex-shrink: 0; }
+  .field input[type="number"], .field input[type="text"] {
     background: #2d2d2d; border: 1px solid #444; border-radius: 4px;
-    color: #d4d4d4; font-family: monospace; font-size: 14px;
-    padding: 6px 10px; width: 240px;
+    color: #d4d4d4; font-family: monospace; font-size: 13px;
+    padding: 5px 8px; width: 180px;
   }
   .field input:focus { outline: none; border-color: #f0c040; }
-  .field .hint { font-size: 11px; color: #555; margin-top: 3px; }
+  .hint { font-size: 11px; color: #555; }
 
-  /* Buttons */
-  button { font-family: monospace; font-size: 13px; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px; }
-  .btn-choose  { background: #f0c040; color: #1e1e1e; font-weight: bold; }
-  .btn-json    { background: #2a5a8a; color: #fff; }
-  .btn-save    { background: #2a7a4a; color: #fff; }
-  .btn-reset   { background: #3a3a3a; color: #888; }
-  button:hover { opacity: 0.85; }
+  /* ── Grid layouts ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 16px; }
+  @media (max-width: 700px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
 
-  .actions { margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; display: flex; flex-wrap: wrap; gap: 8px; }
+  /* ── Powers ── */
+  .powers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+  .power-row { display: flex; align-items: center; gap: 8px; background: #2a2a2a; border: 1px solid #333; border-radius: 4px; padding: 6px 10px; }
+  .power-row label { font-size: 12px; color: #ce9178; flex: 1; }
+  .power-row input { background:#1e1e1e; border:1px solid #444; border-radius:4px; color:#d4d4d4; font-family:monospace; font-size:13px; padding:4px 6px; width:70px; }
+  .power-row input:focus { outline:none; border-color:#f0c040; }
 
-  /* Raw JSON preview */
-  #jsonPreview { background: #111; border: 1px solid #333; border-radius: 4px; padding: 12px; font-size: 11px; color: #6a9955; max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-top: 8px; display: none; }
-  #togglePreview { font-size: 11px; color: #555; cursor: pointer; background: none; border: none; padding: 0; margin-top: 8px; }
-  #togglePreview:hover { color: #aaa; }
+  /* ── Insta Monkeys ── */
+  .insta-tower-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .insta-tab { font-family:monospace; font-size:11px; padding:4px 10px; background:#2d2d2d; border:1px solid #444; border-radius:4px; cursor:pointer; color:#888; }
+  .insta-tab:hover { border-color:#888; }
+  .insta-tab.active { background:#2a3a1a; border-color:#6a9955; color:#6a9955; }
+  .insta-panel { display: none; }
+  .insta-panel.active { display: block; }
+  .insta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; margin-top: 8px; }
+  .insta-cell { background:#2a2a2a; border:1px solid #333; border-radius:4px; padding:6px 8px; }
+  .insta-cell label { display:block; font-size:11px; color:#888; margin-bottom:4px; font-family:monospace; }
+  .insta-cell input { background:#1e1e1e; border:1px solid #444; border-radius:4px; color:#d4d4d4; font-family:monospace; font-size:13px; padding:4px 6px; width:100%; }
+  .insta-cell input:focus { outline:none; border-color:#f0c040; }
+
+  /* ── Achievements ── */
+  .ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px; }
+  .ach-row { display:flex; align-items:center; gap:8px; background:#2a2a2a; border:1px solid #333; border-radius:4px; padding:6px 10px; }
+  .ach-row.hidden-ach { border-color: #3a3a1a; }
+  .ach-info { flex:1; min-width:0; }
+  .ach-name { font-size:12px; color:#d4d4d4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ach-desc { font-size:10px; color:#555; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ach-row input { background:#1e1e1e; border:1px solid #444; border-radius:4px; color:#d4d4d4; font-family:monospace; font-size:12px; padding:3px 6px; width:80px; flex-shrink:0; }
+  .ach-row input:focus { outline:none; border-color:#f0c040; }
+  .ach-max { font-size:10px; color:#555; flex-shrink:0; white-space:nowrap; }
+  .ach-filter { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+  .ach-filter button { font-family:monospace; font-size:11px; padding:3px 10px; background:#2d2d2d; border:1px solid #444; border-radius:3px; cursor:pointer; color:#888; }
+  .ach-filter button:hover { border-color:#9cdcfe; color:#9cdcfe; }
+
+  /* ── Maps ── */
+  .map-filter { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+  .map-filter button { font-family:monospace; font-size:11px; padding:3px 10px; background:#2d2d2d; border:1px solid #444; border-radius:3px; cursor:pointer; color:#888; }
+  .map-filter button.active { border-color:#9cdcfe; color:#9cdcfe; }
+  .map-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .map-table th { background:#252525; color:#888; padding:5px 8px; text-align:left; border-bottom:1px solid #333; font-weight:normal; }
+  .map-table td { padding:4px 8px; border-bottom:1px solid #2a2a2a; vertical-align:middle; }
+  .map-table tr:hover td { background:#252525; }
+  .map-table input { background:#1e1e1e; border:1px solid #444; border-radius:3px; color:#d4d4d4; font-family:monospace; font-size:12px; padding:3px 5px; width:50px; text-align:center; }
+  .map-table input:focus { outline:none; border-color:#f0c040; }
+  .map-name { color:#d4d4d4; min-width:130px; }
+  .medal-col { text-align:center; color:#555; font-size:11px; }
+
+  /* ── Buttons ── */
+  button.btn { font-family:monospace; font-size:12px; padding:7px 16px; border:none; border-radius:4px; cursor:pointer; }
+  button.btn:hover { opacity:0.85; }
+  .btn-choose { background:#f0c040; color:#1e1e1e; font-weight:bold; }
+  .btn-json   { background:#2a5a8a; color:#fff; }
+  .btn-save   { background:#2a7a4a; color:#fff; }
+  .btn-reset  { background:#3a3a3a; color:#888; }
+  .btn-sm     { font-size:11px; padding:4px 10px; }
+
+  .actions { margin-top:16px; padding-top:14px; border-top:1px solid #333; display:flex; flex-wrap:wrap; gap:8px; }
+
+  /* ── Raw JSON ── */
+  #jsonPreview { background:#111; border:1px solid #333; border-radius:4px; padding:10px; font-size:11px; color:#6a9955; max-height:200px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; margin-top:8px; display:none; }
+  #togglePreview { font-size:11px; color:#555; cursor:pointer; background:none; border:none; padding:0; font-family:monospace; }
+  #togglePreview:hover { color:#aaa; }
+
+  /* ── Warning banner ── */
+  .warn { background:#3a2a00; border:1px solid #6a5000; border-radius:4px; padding:6px 10px; font-size:11px; color:#f0c040; margin-bottom:10px; }
 </style>
 </head>
 <body>
 
 <h1>BTD6 Save Editor</h1>
-<p>Load Profile.Save → edit values → download the edited JSON and/or re-encrypted .Save</p>
+<p>Load Profile.Save → edit → download edited JSON and/or re-encrypted .Save</p>
 
-<!-- ── UPLOAD ─────────────────────────────────────────────────────────────── -->
+<!-- ── Upload ───────────────────────────────────────────────────── -->
 <div id="uploadArea">
   <p>Drop your Profile.Save here, or click to browse</p>
-  <button class="btn-choose" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">Choose File</button>
+  <button class="btn btn-choose" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">Choose File</button>
   <input type="file" id="fileInput">
 </div>
-
 <div id="status"></div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════
-     EDITOR  —  this is the part you customise
-     ═══════════════════════════════════════════════════════════════════════════
-     HOW TO ADD A FIELD
-     ──────────────────
-     Copy any .field block and change:
-       • data-key="..."  →  the exact key from the save JSON  (case-sensitive)
-       • <label> text    →  whatever label you want shown
-       • type="number"   →  use type="text" for string values
-
-     For a value inside a nested object, use dots:
-       data-key="powersData.BananaFarmer.quantity"
-
-     HOW TO FIND THE RIGHT KEY
-     ─────────────────────────
-     1. Load your save, click "Show raw JSON"
-     2. Ctrl+F for your current value (e.g. your monkey money amount)
-     3. The key to the left of that value is what goes in data-key
-
-     SECTIONS are just <h2> headings — cosmetic only, add as many as you want.
-════════════════════════════════════════════════════════════════════════════ -->
+<!-- ── Editor ───────────────────────────────────────────────────── -->
 <div id="editor">
 
-  <!-- ── Currency ──────────────────────────────────────────────────────── -->
-  <h2>Currency</h2>
-
-  <div class="field">
-    <label>Monkey Money</label>
-    <input type="number" id="inp_monkeyMoney" data-key="monkeyMoney" min="0">
-    <div class="hint">data-key: monkeyMoney</div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('currency')">Currency &amp; XP</div>
+    <div class="tab" onclick="switchTab('powers')">Powers</div>
+    <div class="tab" onclick="switchTab('instas')">Insta-Monkeys</div>
+    <div class="tab" onclick="switchTab('achievements')">Achievements</div>
+    <div class="tab" onclick="switchTab('maps')">Map Medals</div>
+    <div class="tab" onclick="switchTab('raw')">Raw JSON</div>
   </div>
 
-  <div class="field">
-    <label>Total XP</label>
-    <input type="number" id="inp_xp" data-key="xp" min="0">
-    <div class="hint">data-key: xp</div>
-  </div>
+  <!-- ══ TAB: Currency & XP ══════════════════════════════════════ -->
+  <div class="tab-panel active" id="tab-currency">
 
-  <div class="field">
-    <label>Veteran XP</label>
-    <input type="number" id="inp_veteranXp" data-key="veteranXp" min="0">
-    <div class="hint">data-key: veteranXp</div>
-  </div>
-
-  <!-- ── Stats ─────────────────────────────────────────────────────────── -->
-  <h2>Stats</h2>
-
-  <div class="field">
-    <label>Bloons Popped (lifetime)</label>
-    <input type="number" id="inp_bloonsPopped" data-key="bloonsPopped" min="0">
-    <div class="hint">data-key: bloonsPopped</div>
-  </div>
-
-  <div class="field">
-    <label>Games Played</label>
-    <input type="number" id="inp_gamesPlayed" data-key="gamesPlayed" min="0">
-    <div class="hint">data-key: gamesPlayed</div>
-  </div>
-
-  <!-- ── ADD YOUR OWN FIELDS BELOW ─────────────────────────────────────── -->
-  <!--
-    TEMPLATE — uncomment and fill in:
-
-    <h2>Your Section Name</h2>
-
-    <div class="field">
-      <label>Your Label</label>
-      <input type="number" id="inp_something" data-key="exactJsonKey" min="0">
-      <div class="hint">data-key: exactJsonKey</div>
+    <h2>Currency</h2>
+    <div class="grid-2">
+      <div>
+        <div class="field">
+          <label>Monkey Money</label>
+          <input type="number" data-key="monkeyMoney" min="0">
+        </div>
+        <div class="field">
+          <label>Trophies</label>
+          <input type="number" data-key="trophies" min="0">
+        </div>
+        <div class="field">
+          <label>Knowledge Points (available)</label>
+          <input type="number" data-key="knowledgePoints" min="0">
+        </div>
+        <div class="field">
+          <label>Total Knowledge Points spent</label>
+          <input type="number" data-key="totalKnowledgePointsEarned" min="0">
+        </div>
+      </div>
+      <div>
+        <div class="field">
+          <label>Daily Chest day index</label>
+          <input type="number" data-key="dailyRewardIndex" min="0">
+        </div>
+        <div class="field">
+          <label>Daily Chests opened (total)</label>
+          <input type="number" data-key="consecutiveDailyLogin" min="0">
+        </div>
+      </div>
     </div>
 
-    NESTED EXAMPLE:
-    <div class="field">
-      <label>Banana Farmer quantity</label>
-      <input type="number" id="inp_bfQty" data-key="powersData.BananaFarmer.quantity" min="0">
-      <div class="hint">data-key: powersData.BananaFarmer.quantity</div>
+    <h2>XP &amp; Level</h2>
+    <div class="warn">⚠ Editing XP / rank directly may flag your account on leaderboards.</div>
+    <div class="grid-2">
+      <div>
+        <div class="field">
+          <label>XP (levels 1–155)</label>
+          <input type="number" data-key="xp" min="0">
+        </div>
+        <div class="field">
+          <label>Veteran XP (level 156+)</label>
+          <input type="number" data-key="veteranXp" min="0">
+        </div>
+      </div>
+      <div>
+        <div class="field">
+          <label>Rank (stored level, 1–155)</label>
+          <input type="number" data-key="rank" min="1" max="155">
+        </div>
+        <div class="field">
+          <label>Veteran Rank (156+)</label>
+          <input type="number" data-key="veteranRank" min="0">
+        </div>
+      </div>
     </div>
-  -->
 
-  <!-- ── Raw JSON ───────────────────────────────────────────────────────── -->
-  <h2>Decrypted JSON (read-only reference)</h2>
-  <button id="togglePreview" onclick="togglePreview()">▶ Show raw JSON</button>
-  <pre id="jsonPreview"></pre>
+    <h2>Lifetime Stats</h2>
+    <div class="grid-2">
+      <div>
+        <div class="field">
+          <label>Bloons Popped (total)</label>
+          <input type="number" data-key="bloonsPopped" min="0">
+        </div>
+        <div class="field">
+          <label>MOABs Popped</label>
+          <input type="number" data-key="moabsPopped" min="0">
+        </div>
+        <div class="field">
+          <label>Games Played</label>
+          <input type="number" data-key="gamesPlayed" min="0">
+        </div>
+        <div class="field">
+          <label>Games Won</label>
+          <input type="number" data-key="gamesWon" min="0">
+        </div>
+        <div class="field">
+          <label>Highest Round</label>
+          <input type="number" data-key="highestRound" min="0">
+        </div>
+      </div>
+      <div>
+        <div class="field">
+          <label>Total Cash Earned</label>
+          <input type="number" data-key="cashEarned" min="0">
+        </div>
+        <div class="field">
+          <label>Powers Used (total)</label>
+          <input type="number" data-key="powersUsed" min="0">
+        </div>
+        <div class="field">
+          <label>Insta Monkeys Used (total)</label>
+          <input type="number" data-key="instasUsed" min="0">
+        </div>
+        <div class="field">
+          <label>Races Entered</label>
+          <input type="number" data-key="racesEntered" min="0">
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <!-- ── Actions ───────────────────────────────────────────────────────── -->
+  <!-- ══ TAB: Powers ══════════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-powers">
+    <h2>Powers</h2>
+    <p style="margin-bottom:10px;">Edit the quantity of each power in your inventory.</p>
+    <div class="powers-grid" id="powersGrid"></div>
+  </div>
+
+  <!-- ══ TAB: Insta-Monkeys ═══════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-instas">
+    <h2>Insta-Monkeys</h2>
+    <p style="margin-bottom:10px;">Select a tower, then edit the quantity for each crosspath.</p>
+    <div class="insta-tower-tabs" id="instaTowerTabs"></div>
+    <div id="instaPanels"></div>
+  </div>
+
+  <!-- ══ TAB: Achievements ═════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-achievements">
+    <h2>Achievements</h2>
+    <div class="warn">⚠ Set progress to the goal value to mark an achievement complete. The game checks this on next load.</div>
+    <div class="ach-filter">
+      <span style="color:#888;font-size:12px;">Filter:</span>
+      <button class="btn btn-sm" onclick="filterAch('all')">All</button>
+      <button class="btn btn-sm" onclick="filterAch('incomplete')">Incomplete</button>
+      <button class="btn btn-sm" onclick="filterAch('hidden')">Hidden</button>
+      <button class="btn btn-sm" onclick="achMaxAll()">Max All</button>
+    </div>
+    <div class="ach-grid" id="achGrid"></div>
+  </div>
+
+  <!-- ══ TAB: Map Medals ══════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-maps">
+    <h2>Map Medals</h2>
+    <p style="margin-bottom:8px;">Medal values the game uses: <strong style="color:#d4d4d4">0</strong> = none, <strong style="color:#d4d4d4">1</strong> = bronze, <strong style="color:#d4d4d4">2</strong> = silver, <strong style="color:#d4d4d4">3</strong> = gold, <strong style="color:#d4d4d4">4</strong> = black border.</p>
+    <div class="map-filter">
+      <span style="color:#888;font-size:12px;">Show:</span>
+      <button class="btn btn-sm active" onclick="filterMaps('all',this)">All</button>
+      <button class="btn btn-sm" onclick="filterMaps('Beginner',this)">Beginner</button>
+      <button class="btn btn-sm" onclick="filterMaps('Intermediate',this)">Intermediate</button>
+      <button class="btn btn-sm" onclick="filterMaps('Advanced',this)">Advanced</button>
+      <button class="btn btn-sm" onclick="filterMaps('Expert',this)">Expert</button>
+      <button class="btn btn-sm" onclick="mapsMaxAll()">Max All (Black Border)</button>
+    </div>
+    <table class="map-table" id="mapsTable">
+      <thead>
+        <tr>
+          <th>Map</th>
+          <th class="medal-col">Easy</th>
+          <th class="medal-col">Primary</th>
+          <th class="medal-col">Deflation</th>
+          <th class="medal-col">Medium</th>
+          <th class="medal-col">Military</th>
+          <th class="medal-col">Apopalypse</th>
+          <th class="medal-col">Reverse</th>
+          <th class="medal-col">Hard</th>
+          <th class="medal-col">Magic</th>
+          <th class="medal-col">2xHP</th>
+          <th class="medal-col">½Cash</th>
+          <th class="medal-col">ABR</th>
+          <th class="medal-col">Impop</th>
+          <th class="medal-col">CHIMPS</th>
+        </tr>
+      </thead>
+      <tbody id="mapsBody"></tbody>
+    </table>
+  </div>
+
+  <!-- ══ TAB: Raw JSON ════════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-raw">
+    <h2>Decrypted JSON</h2>
+    <p style="margin-bottom:8px;">Read-only reference. Use Ctrl+F to find keys to add to the editor.</p>
+    <button id="togglePreview" onclick="togglePreview()">▶ Show raw JSON</button>
+    <pre id="jsonPreview"></pre>
+  </div>
+
+  <!-- ── Actions ──────────────────────────────────────────────── -->
   <div class="actions">
-    <button class="btn-json"  onclick="downloadJSON()">⬇ Download Edited JSON</button>
-    <button class="btn-save"  onclick="downloadSave()">⬇ Download Re-encrypted .Save</button>
-    <button class="btn-reset" onclick="reset()">✕ Reset</button>
+    <button class="btn btn-json" onclick="downloadJSON()">⬇ Download Edited JSON</button>
+    <button class="btn btn-save" onclick="downloadSave()">⬇ Download Re-encrypted .Save</button>
+    <button class="btn btn-reset" onclick="reset()">✕ Reset</button>
   </div>
 
 </div><!-- /editor -->
 
 
 <script>
-// ─── STATE ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// DATA TABLES
+// ═══════════════════════════════════════════════════════════════════
 
-let profile   = null;   // the full parsed save JSON
-let rawHeader = null;   // bytes  0-43  (44 bytes) — preserved exactly
-let rawPwdIdx = null;   // bytes 44-51  (8 bytes)  — preserved exactly
-let rawSalt   = null;   // bytes 52-75  (24 bytes) — used for decrypt only; new one on re-encrypt
+const POWERS = [
+  { key: 'BananaFarmer',    name: 'Banana Farmer' },
+  { key: 'CamoTrap',        name: 'Camo Trap' },
+  { key: 'CashDrop',        name: 'Cash Drop' },
+  { key: 'DartTime',        name: 'Time Stop' },
+  { key: 'EnergisingTotem', name: 'Energising Totem' },
+  { key: 'GlueTrap',        name: 'Glue Trap' },
+  { key: 'MoabMine',        name: 'MOAB Mine' },
+  { key: 'MonkeyBoost',     name: 'Monkey Boost' },
+  { key: 'Pontoon',         name: 'Pontoon' },
+  { key: 'PortableLake',    name: 'Portable Lake' },
+  { key: 'RoadSpikes',      name: 'Road Spikes' },
+  { key: 'SuperMonkeyStorm',name: 'Super Monkey Storm' },
+  { key: 'TechBot',         name: 'Tech Bot' },
+  { key: 'Thrive',          name: 'Thrive' },
+];
+
+const TOWERS = [
+  ['DartMonkey','Dart Monkey'],['BoomerangMonkey','Boomerang Monkey'],
+  ['BombShooter','Bomb Shooter'],['TackShooter','Tack Shooter'],
+  ['IceMonkey','Ice Monkey'],['GlueGunner','Glue Gunner'],
+  ['Desperado','Desperado'],['SniperMonkey','Sniper Monkey'],
+  ['MonkeySub','Monkey Sub'],['MonkeyBuccaneer','Monkey Buccaneer'],
+  ['MonkeyAce','Monkey Ace'],['HeliPilot','Heli Pilot'],
+  ['MortarMonkey','Mortar Monkey'],['DartlingGunner','Dartling Gunner'],
+  ['WizardMonkey','Wizard Monkey'],['SuperMonkey','Super Monkey'],
+  ['NinjaMonkey','Ninja Monkey'],['Alchemist','Alchemist'],
+  ['Druid','Druid'],['Mermonkey','Mermonkey'],
+  ['BananaFarm','Banana Farm'],['SpikeFactory','Spike Factory'],
+  ['MonkeyVillage','Monkey Village'],['EngineerMonkey','Engineer Monkey'],
+  ['BeastHandler','Beast Handler'],
+];
+
+// All valid crosspaths in order (matches dogz.js instaCrosspaths)
+const CROSSPATHS = [
+  '5-2-0','5-0-2','5-1-0','5-0-1','5-0-0',
+  '2-5-0','0-5-2','1-5-0','0-5-1','0-5-0',
+  '2-0-5','0-2-5','1-0-5','0-1-5','0-0-5',
+  '4-2-0','4-0-2','4-1-0','4-0-1','4-0-0',
+  '2-4-0','0-4-2','1-4-0','0-4-1','0-4-0',
+  '2-0-4','0-2-4','1-0-4','0-1-4','0-0-4',
+  '3-2-0','3-0-2','3-1-0','3-0-1','3-0-0',
+  '2-3-0','0-3-2','1-3-0','0-3-1','0-3-0',
+  '2-0-3','0-2-3','1-0-3','0-1-3','0-0-3',
+  '2-2-0','2-0-2','2-1-0','2-0-1','2-0-0',
+  '0-2-2','1-2-0','0-2-1','0-2-0','1-0-2',
+  '0-1-2','0-0-2','1-1-0','1-0-1','1-0-0',
+  '0-1-1','0-1-0','0-0-1','0-0-0',
+];
+
+const MAPS = [
+  // [technicalName, displayName, difficulty]
+  ['Tutorial','Monkey Meadow','Beginner'],
+  ['InTheLoop','In The Loop','Beginner'],
+  ['ThreeMinesAround','Three Mines Around','Beginner'],
+  ['MiddleOfTheRoad','Middle Of The Road','Beginner'],
+  ['SpaPits','Spa Pits','Beginner'],
+  ['Tinkerton','Tinkerton','Beginner'],
+  ['TreeStump','Tree Stump','Beginner'],
+  ['TownCentre','Tower Center','Beginner'],
+  ['OneTwoTree','One Two Tree','Beginner'],
+  ['Scrapyard','Scrapyard','Beginner'],
+  ['TheCabin','The Cabin','Beginner'],
+  ['Resort','Resort','Beginner'],
+  ['Skates','Skates','Beginner'],
+  ['LotusIsland','Lotus Island','Beginner'],
+  ['CandyFalls','Candy Falls','Beginner'],
+  ['WinterPark','Winter Park','Beginner'],
+  ['Carved','Carved','Beginner'],
+  ['ParkPath','Park Path','Beginner'],
+  ['AlpineRun','Alpine Run','Beginner'],
+  ['FrozenOver','Frozen Over','Beginner'],
+  ['Cubism','Cubism','Beginner'],
+  ['FourCircles','Four Circles','Beginner'],
+  ['Hedge','Hedge','Beginner'],
+  ['EndOfTheRoad','End Of The Road','Beginner'],
+  ['Logs','Logs','Beginner'],
+
+  ['LuminousCove','Luminous Cove','Intermediate'],
+  ['SulfurSprings','Sulfur Springs','Intermediate'],
+  ['LostCrevasse','Lost Crevasse','Intermediate'],
+  ['WaterPark','Water Park','Intermediate'],
+  ['Polyphemus','Polyphemus','Intermediate'],
+  ['CoveredGarden','Covered Garden','Intermediate'],
+  ['Quarry','Quarry','Intermediate'],
+  ['QuietStreet','Quiet Street','Intermediate'],
+  ['BloonariusPrime','Bloonarius Prime','Intermediate'],
+  ['Balance','Balance','Intermediate'],
+  ['Encrypted','Encrypted','Intermediate'],
+  ['Bazaar','Bazaar','Intermediate'],
+  ['AdorasTemple',"Adora's Temple",'Intermediate'],
+  ['SpringSpring','Spring Spring','Intermediate'],
+  ['KartsNDarts','KartsNDarts','Intermediate'],
+  ['MoonLanding','Moon Landing','Intermediate'],
+  ['Haunted','Haunted','Intermediate'],
+  ['Downstream','Downstream','Intermediate'],
+  ['FiringRange','Firing Range','Intermediate'],
+  ['Cracked','Cracked','Intermediate'],
+  ['Streambed','Streambed','Intermediate'],
+  ['Chutes','Chutes','Intermediate'],
+  ['Rake','Rake','Intermediate'],
+  ['SpiceIslands','Spice Islands','Intermediate'],
+  ['SunsetGulch','Sunset Gulch','Intermediate'],
+
+  ['EnchantedGlade','Enchanted Glade','Advanced'],
+  ['LastResort','Last Resort','Advanced'],
+  ['AncientPortal','Ancient Portal','Advanced'],
+  ['CastleRevenge','Castle Revenge','Advanced'],
+  ['DarkPath','Dark Path','Advanced'],
+  ['Erosion','Erosion','Advanced'],
+  ['MidnightMansion','Midnight Mansion','Advanced'],
+  ['SunkenColumns','Sunken Columns','Advanced'],
+  ['XFactor','X-Factor','Advanced'],
+  ['Mesa','Mesa','Advanced'],
+  ['Geared','Geared','Advanced'],
+  ['Spillway','Spillway','Advanced'],
+  ['Cargo','Cargo','Advanced'],
+  ['PatsPond',"Pat's Pond",'Advanced'],
+  ['Peninsula','Peninsula','Advanced'],
+  ['HighFinance','High Finance','Advanced'],
+  ['AnotherBrick','Another Brick','Advanced'],
+  ['OffTheCoast','Off The Coast','Advanced'],
+  ['Cornfield','Cornfield','Advanced'],
+  ['Underground','Underground','Advanced'],
+
+  ['GlacialTrail','Glacial Trail','Expert'],
+  ['DarkDungeons','Dark Dungeons','Expert'],
+  ['TrickyTracks','Tricky Tracks','Expert'],
+  ['Sanctuary','Sanctuary','Expert'],
+  ['Ravine','Ravine','Expert'],
+  ['FloodedValley','Flooded Valley','Expert'],
+  ['Infernal','Infernal','Expert'],
+  ['BloodyPuddles','Bloody Puddles','Expert'],
+  ['Workshop','Workshop','Expert'],
+  ['Quad','Quad','Expert'],
+  ['DarkCastle','Dark Castle','Expert'],
+  ['MuddyPuddles','Muddy Puddles','Expert'],
+  ['#ouch','#OUCH','Expert'],
+];
+
+// gamemode key → column label mapping (matches dogz.js gamemodesTechnicalNames)
+const GAMEMODES = [
+  { diff:'Easy',   key:'Standard',              label:'Easy'      },
+  { diff:'Easy',   key:'PrimaryOnly',            label:'Primary'   },
+  { diff:'Easy',   key:'Deflation',              label:'Deflation' },
+  { diff:'Medium', key:'Standard',               label:'Medium'    },
+  { diff:'Medium', key:'MilitaryOnly',           label:'Military'  },
+  { diff:'Medium', key:'Apopalypse',             label:'Apopalypse'},
+  { diff:'Medium', key:'Reverse',                label:'Reverse'   },
+  { diff:'Hard',   key:'Standard',               label:'Hard'      },
+  { diff:'Hard',   key:'MagicOnly',              label:'Magic'     },
+  { diff:'Hard',   key:'DoubleMoabHealth',       label:'2xHP'      },
+  { diff:'Hard',   key:'HalfCash',               label:'½Cash'     },
+  { diff:'Hard',   key:'AlternateBloonsRounds',  label:'ABR'       },
+  { diff:'Hard',   key:'Impoppable',             label:'Impop'     },
+  { diff:'Hard',   key:'Clicks',                 label:'CHIMPS'    },
+];
+
+// All achievements from dogz.js achievementData
+const ACHIEVEMENTS = [
+  {type:'AchievementImpoppable',goal:100000000,name:'Impoppable',desc:'Pop 100,000,000 Bloons',hidden:false},
+  {type:'AchievementMoabAssasin',goal:25000,name:'MOAB Assassin',desc:'Destroy 25,000 MOABs',hidden:false},
+  {type:'AchievementBfbBrawler',goal:10000,name:'BFB Brawler',desc:'Destroy 10,000 BFBs',hidden:false},
+  {type:'AchievementZomginator',goal:5000,name:'ZOMGinator',desc:'Destroy 5,000 ZOMGs',hidden:false},
+  {type:'AchievementMeDidAJobOnDdt',goal:5000,name:'Me Did A Job on DDT',desc:'Destroy 5,000 DDTs',hidden:false},
+  {type:'AchievementSapper',goal:5000000,name:'Sapper',desc:'Pop 5,000,000 Fortified Bloons or MOAB-Class',hidden:false},
+  {type:'AchievementFirstWin',goal:1,name:'First Win',desc:'1 Non-Tutorial Beginner map Win',hidden:false},
+  {type:'AchievementGrasshopper',goal:9,name:'Grasshopper',desc:'Win on 9 different Beginner maps',hidden:false},
+  {type:'AchievementNextLevel',goal:1,name:'Next Level',desc:'Win 1 game on an Intermediate map',hidden:false},
+  {type:'AchievementAcolyte',goal:5,name:'Acolyte',desc:'Win games on 5 different Intermediate maps',hidden:false},
+  {type:'AchievementAdvancedPlayer',goal:1,name:'Advanced Player',desc:'Win 1 game on an Advanced map',hidden:false},
+  {type:'AchievementBigMonkey',goal:1,name:'Big Monkey',desc:'Deploy a tier 4 monkey tower',hidden:false},
+  {type:'AchievementMegaMonkey',goal:1,name:'Mega Monkey',desc:'Deploy a tier 5 monkey tower',hidden:false},
+  {type:'AchievementHeroTime',goal:1,name:'Hero Time',desc:'Deploy a Hero on a non-tutorial map',hidden:false},
+  {type:'AchievementHeroPowersActivate',goal:1,name:'Hero Powers Activate',desc:'Use any Hero Level 3 Ability',hidden:false},
+  {type:'AchievementBiggerBadder',goal:1,name:'Bigger, Badder',desc:'Use any Hero Level 10 Ability',hidden:false},
+  {type:'AchievementEpicHero',goal:20,name:'Epic Hero',desc:'Level any Hero to Level 20',hidden:false},
+  {type:'AchievementMonkeyAvengerLeague',goal:4,name:'Monkey Avenger League',desc:'Win a game for 4 different Heroes',hidden:false},
+  {type:'AchievementYouveGotThePower',goal:1,name:"You've Got the Power",desc:'Use Powers for the first time',hidden:false},
+  {type:'AchievementPowerUser',goal:25,name:'Power User',desc:'Use Powers 25 times',hidden:false},
+  {type:'AchievementEmpowered',goal:100,name:'Empowered',desc:'Use Powers 100 times',hidden:false},
+  {type:'AchievementStudent',goal:1,name:'Student',desc:'Apply your first Monkey Knowledge point',hidden:false},
+  {type:'AchievementScholar',goal:10,name:'Scholar',desc:'Apply 10 Monkey Knowledge points',hidden:false},
+  {type:'AchievementDrMonkey',goal:106,name:'Dr. Monkey',desc:'Spend 106 Monkey Knowledge points',hidden:false},
+  {type:'AchievementFirstMonkeysFirst',goal:10,name:'First Monkeys First',desc:'Win 10 games using only Primary monkeys',hidden:false},
+  {type:'AchievementWarMonkeys',goal:10,name:'War Monkeys',desc:'Win 10 games using only Military monkeys',hidden:false},
+  {type:'AchievementAbracadabmonkey',goal:10,name:'Abracadabmonkey',desc:'Win 10 games using only Magic monkeys',hidden:false},
+  {type:'AchievementUnsungMonkeys',goal:10,name:'Unsung Monkeys',desc:'Win 10 games using only Support monkeys',hidden:false},
+  {type:'AchievementInflated',goal:100,name:'Inflated',desc:'Beat round 100 in Deflation mode',hidden:false},
+  {type:'AchievementSurvivor',goal:100,name:'Survivor',desc:'Beat round 100 in Apopalypse mode',hidden:false},
+  {type:'AchievementIndie',goal:25,name:'Indie',desc:'Win 25 games with Alternate Bloon Rounds',hidden:false},
+  {type:'AchievementPoppable',goal:25,name:'Poppable',desc:'Win 25 games on Impoppable Difficulty',hidden:false},
+  {type:'AchievementThrifty',goal:10,name:'Thrifty',desc:'Win 10 games in Half Cash mode',hidden:false},
+  {type:'AchievementBloonzilla',goal:25,name:'Bloonzilla!',desc:'Win 25 games against Double HP MOABs',hidden:false},
+  {type:'AchievementRoleReverser',goal:1,name:'Role Reverser',desc:'Win a game in Reverse mode',hidden:false},
+  {type:'AchievementMedalWinner',goal:1,name:'Medal Winner',desc:'Get all medals for a map',hidden:false},
+  {type:'AchievementDecoratedHero',goal:36,name:'Decorated Hero',desc:'Get 36 difficulty medals on Beginner maps',hidden:false},
+  {type:'AchievementRedAndBlueMakes',goal:100000,name:'Red and Blue Makes...',desc:'Pop 100,000 Purple Bloons',hidden:false},
+  {type:'AchievementInfrared',goal:250000,name:'Infrared',desc:'Pop 250,000 Camo Bloons',hidden:false},
+  {type:'AchievementOurPowersCombined',goal:12,name:'Our Powers Combined',desc:'Collect at least 12 different Powers',hidden:false},
+  {type:'AchievementChallenger',goal:1,name:'Challenger',desc:'Win 1 Daily Challenge',hidden:false},
+  {type:'AchievementChallengeMaster',goal:100,name:'Challenge Master',desc:'Win 100 Daily Challenges',hidden:false},
+  {type:'AchievementPerfectWeek',goal:7,name:'Perfect Week',desc:'Complete all Daily Challenges in a week',hidden:false},
+  {type:'AchievementKnowledgablePrimate',goal:100,name:'Knowledgeable Primate',desc:'Unlock all Monkey Knowledge in one branch',hidden:false},
+  {type:'AchievementClicker',goal:1,name:'Bloons Master',desc:'Beat 1 map in CHIMPS mode',hidden:false},
+  {type:'AchievementSuperiorClicker',goal:5,name:'Superior Bloons Master',desc:'Beat 5 maps in CHIMPS mode',hidden:false},
+  {type:'AchievementUltimateClicker',goal:15,name:'Ultimate Bloons Master',desc:'Beat 15 maps in CHIMPS mode',hidden:false},
+  {type:'AchievementSuperBad',goal:1000,name:'Super BAD',desc:'Destroy 1,000 BADs',hidden:false},
+  {type:'AchievementCooperation',goal:1,name:'Co-operation',desc:'Beat 1 map in Co-op mode',hidden:false},
+  {type:'AchievementFourTimesTheFun',goal:1,name:'Four times the fun',desc:'Beat 1 map in 4-player Co-op mode',hidden:false},
+  {type:'AchievementTripleThreat',goal:1,name:'Triple threat',desc:'Beat 1 map in 3-player Co-op mode',hidden:false},
+  {type:'AchievementCollaborate',goal:1,name:'Collaborate!',desc:'Have 4 Heroes on screen at once',hidden:false},
+  {type:'AchievementWhenTheGoingGetsTough',goal:10,name:'When the going gets tough...',desc:'Win 10 games on Hard difficulty in Co-op',hidden:false},
+  {type:'AchievementKindBenefactor',goal:10000,name:'Kind Benefactor',desc:'Give 10,000 Cash in Co-op mode',hidden:false},
+  {type:'AchievementGenerousBenefactor',goal:50000,name:'Generous Benefactor',desc:'Give 50,000 Cash in Co-op mode',hidden:false},
+  {type:'AchievementMonkeyContributor',goal:100000,name:'Monkey Contributor',desc:'Give 100,000 Cash in Co-op mode',hidden:false},
+  {type:'AchievementMonkeyPhilanthropist',goal:1000000,name:'Monkey Philanthropist',desc:'Give 1,000,000 Cash in Co-op mode',hidden:false},
+  {type:'AchievementPowershare',goal:10,name:'Powershare',desc:'Use 10 Powers in Co-op mode',hidden:false},
+  {type:'AchievementPowerOverwhelming',goal:100,name:'Power overwhelming!',desc:'Use 100 Powers in Co-op mode',hidden:false},
+  {type:'AchievementInstaDefence',goal:5,name:'Insta-defense',desc:'Use 5 Insta Monkeys in Co-op mode',hidden:false},
+  {type:'AchievementCoopPopper',goal:10000000,name:'Co-op Popper',desc:'Pop 10,000,000 Bloons in Co-op mode',hidden:false},
+  {type:'AchievementSnapOfYourFingers',goal:1,name:'Snap of your fingers',desc:'Finish a game with exactly half your starting lives and cash',hidden:false},
+  {type:'AchievementBloontona500',goal:500,name:'Bloontona 500',desc:'Gain entry to 500 races',hidden:false},
+  {type:'AchievementRookieOfTheYear',goal:1,name:'Rookie of the year',desc:'Complete a race in under 10 minutes',hidden:false},
+  {type:'AchievementTherpopylae',goal:200000,name:'Therpopylae',desc:'Pop 200,000 Bloons on Peninsula',hidden:false},
+  {type:'AchievementBloonMasterPopulous',goal:1000000000,name:'Bloon Master Populous',desc:'Deal 1 billion damage with the Bloon Master Alchemist',hidden:false},
+  {type:'AchievementISeeYou',goal:10000,name:'I see you',desc:'Reveal 10,000 Bloons using Shimmer',hidden:false},
+  {type:'AchievementTetrimino',goal:1,name:'Tetrimino',desc:'Place 50 monkey towers on a map at once',hidden:false},
+  {type:'AchievementAllForOne',goal:1,name:'All for one and one for one',desc:'Win a game with only 1 monkey tower on screen at any time in Hard Difficulty',hidden:false},
+  {type:'AchievementMasterOfLife',goal:1,name:'Master of life',desc:'Have 1000 lives at once in a single game',hidden:false},
+  {type:'AchievementRainbowIsMagic',goal:20000,name:'Rainbow is Magic',desc:'Pop 20,000 Rainbow Bloons with Magic Monkeys',hidden:false},
+  {type:'AchievementWhatDidItCost',goal:23,name:'What did it cost? - Everything',desc:'Sacrifice every tower type in the game to the Temple',hidden:false},
+  {type:'Achievement2MegaPops',goal:1,name:'2 MegaPops',desc:'Complete a game of CHIMPS with more than 2M damage dealt by one tower',hidden:false},
+  {type:'AchievementACrateTime',goal:1,name:'A Crate Time',desc:'Open a Diamond Crate in any Collection Event',hidden:false},
+  {type:'AchievementAxisOfHavoc',goal:1,name:'Axis of Havoc',desc:'Have one of each T5 sniper in one game of CHIMPS',hidden:false},
+  {type:'AchievementTowerKeeper',goal:200,name:'Tower Keeper',desc:'Have 200 insta monkeys in your inventory at one time',hidden:false},
+  {type:'AchievementAYearInTheMaking',goal:365,name:'A year in the making',desc:'Open the Daily Chest 365 times',hidden:false},
+  {type:'AchievementKaliMaa',goal:1,name:'Kali Maaaaaaaa',desc:'Gain 10 levels for Adora in one round',hidden:false},
+  {type:'AchievementAdventurer',goal:1,name:'Adventurer',desc:'Complete an Odyssey',hidden:false},
+  {type:'AchievementSeasonedAdventurer',goal:1,name:'Seasoned Adventurer',desc:'Complete a Hard Odyssey',hidden:false},
+  {type:'AchievementNoStoneLeftUnturned',goal:1,name:'No Stone Left Unturned',desc:'Complete all 3 difficulties of a single Odyssey',hidden:false},
+  {type:'Achievement12TasksOfMonkules',goal:12,name:'12 Tasks of Monk-ules',desc:'Complete 12 different Odysseys',hidden:false},
+  {type:'AchievementModysseusRises',goal:50,name:'Modysseus Rises',desc:'Complete 50 Odysseys',hidden:false},
+  {type:'AchievementModysseusForever',goal:100,name:'Modysseus Forever',desc:'Complete 100 Odysseys',hidden:false},
+  {type:'AchievementFullSpeedAhead',goal:1,name:'Full Speed Ahead!',desc:'Complete an Odyssey in under 1 hour',hidden:false},
+  {type:'AchievementAllAboutThatBling',goal:1,name:'All About That Bling',desc:'Purchase a Trophy Store item',hidden:false},
+  {type:'AchievementToolsToDarwin',goal:20000,name:'Tools to Darwin',desc:'Upgrade towers 20,000 times',hidden:false},
+  {type:'AchievementAchievementOfAchievements',goal:35,name:'Achievement of Achievements',desc:'Collect 35 achievements',hidden:false},
+  {type:'AchievementHookLineAndSinker',goal:3000,name:'Hook, Line, and Sinker',desc:'Rope in 3,000 MOAB-Class Bloons using MOAB Takedown',hidden:false},
+  {type:'AchievementMovingHouse',goal:1000,name:'Moving House',desc:'Redeploy 1,000 monkey towers using the Support Chinook',hidden:false},
+  {type:'AchievementSoShiny',goal:20,name:'So Shiny!',desc:'Pop 20 Golden Bloons',hidden:false},
+  {type:'AchievementGlitteringGold',goal:100,name:'Glittering Gold',desc:'Pop 100 Golden Bloons',hidden:false},
+  {type:'AchievementGloriousGold',goal:500,name:'Glorious Gold',desc:'Pop 500 Golden Bloons',hidden:false},
+  {type:'AchievementMagicalGold',goal:50,name:'Magical Gold',desc:'Pop 50 Golden Bloons in Magic Monkeys only mode',hidden:false},
+  {type:'AchievementTeamPlayer',goal:25,name:'Team Player',desc:'Win 25 times with Monkey Teams',hidden:false},
+  {type:'AchievementTeamCaptain',goal:50,name:'Team Captain',desc:'Win 50 times with Monkey Teams',hidden:false},
+  {type:'AchievementUltimateTeamUp',goal:100,name:'Ultimate Team-up',desc:'Win 100 times with Monkey Teams',hidden:false},
+  {type:'AchievementWhatIsThisNewBloonery',goal:1,name:"What is this new Bloonery?",desc:'Defeat a Tier 1 Boss',hidden:false},
+  {type:'AchievementWhosTheBoss',goal:1,name:"Who's the Boss?",desc:'Defeat a Tier 5 Boss',hidden:false},
+  {type:'AchievementImTheBoss',goal:1,name:"I'm the Boss",desc:'Defeat a Tier 5 Elite Boss',hidden:false},
+  {type:'AchievementApotheosis',goal:1,name:'Apotheosis',desc:'Upgrade to a Monkey Paragon Tower',hidden:false},
+  {type:'AchievementLikeABoss',goal:50,name:'Like a Boss',desc:'Pop 50 Boss Bloons',hidden:false},
+  {type:'AchievementDavidsVsGoliath',goal:1,name:'Davids vs Goliath',desc:'Win a boss battle without using a Hero',hidden:false},
+  {type:'AchievementSoSpiiiceyNinjaKiwi',goal:1,name:'So Spiiicey Ninja Kiwi',desc:'Beat Spice Islands on ABR with only land towers',hidden:false},
+  {type:'AchievementNoHarvest',goal:1,name:'No Harvest',desc:'Beat Cornfield on CHIMPS without removing any corn',hidden:false},
+  {type:'AchievementStudentLoans',goal:1,name:'Student Loans',desc:"Go into $400,000 of debt",hidden:false},
+  {type:'AchievementInvigoration',goal:75,name:'Invigoration',desc:'Have 75 buffs active on your Monkeys at once',hidden:false},
+  {type:'AchievementWorldLeagueTraining',goal:150000,name:'World League Training',desc:'Have 150,000 Beast Handler XP at once',hidden:false},
+  {type:'AchievementSideQuest',goal:1,name:'Side Quest',desc:'Complete a Quest',hidden:false},
+  {type:'AchievementLifeExperience',goal:5368709,name:'Life Experience',desc:'Earn 5,368,709 experience for any tower',hidden:false},
+  {type:'AchievementHeavyInvestment',goal:401626,name:'Heavy Investment',desc:'Invest at least $401,626 extra when creating any Paragon',hidden:false},
+  {type:'Achievement25toLife',goal:5,name:'25 to Life',desc:'Defeat 5 unique Bosses at Tier 5',hidden:false},
+  {type:'AchievementCommunityConnoisseur',goal:100,name:'Community Connoisseur',desc:'Win 100 different community submissions in the Content Browser',hidden:false},
+  {type:'AchievementSocialButterfly',goal:100,name:'Social Butterfly',desc:'Use emotes 100 times in co-op games',hidden:false},
+  // Hidden achievements
+  {type:'AchievementBigBloons',goal:10,name:'Big Bloons',desc:"Pat likes hugging Big Bloons even more",hidden:true},
+  {type:'AchievementSmallBloons',goal:900000,name:'Alchermistman and Bloonacleboy',desc:'You have it set to M for mini...',hidden:true},
+  {type:'Achievement2TC',goal:1,name:'2TC',desc:'Complete a game in CHIMPS with only 2 monkey towers',hidden:true},
+  {type:'AchievementBillGreates',goal:1,name:'Bill Greates',desc:'Send $500,000 to an ally in co-op in one go',hidden:true},
+  {type:'AchievementStrangelyAdorable',goal:1,name:'Strangely Adorable',desc:'When the planets align ever so nicely',hidden:true},
+  {type:'AchievementJoshsConstant',goal:1,name:"Josh's Constant",desc:'Beat Expert map on CHIMPS with $40,870+ spent on 1 Spike Factory',hidden:true},
+  {type:'AchievementSmallTowers',goal:1,name:'Golden Ticket',desc:'Bloompa-loompa-doompa-dee-doo!',hidden:true},
+  {type:'AchievementMoHeroesMoProblems',goal:1,name:'Mo Heroes, Mo Problems',desc:'Complete an Odyssey without a Hero',hidden:true},
+  {type:'AchievementPerfectParagon',goal:1,name:'Perfect Paragon',desc:'Paragon of Paragons',hidden:true},
+  {type:'AchievementNahIdWin',goal:1,name:"Nah I'd win",desc:"Basically NAPSFRILLS'd it",hidden:true},
+  {type:'AchievementStubbornStrategy',goal:100,name:'Stubborn Strategy',desc:'Just because a thing can be done...',hidden:true},
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+
+let profile   = null;
+let rawHeader = null;
+let rawPwdIdx = null;
+let rawSalt   = null;
 let fileName  = 'Profile.Save';
 
-// ─── CRYPTO HELPERS ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// CRYPTO
+// ═══════════════════════════════════════════════════════════════════
 
-// PBKDF2-SHA1, 10 iterations, 32 bytes output
-// Matches Python: PBKDF2HMAC(SHA1, length=32, salt=salt, iterations=10)
-// First 16 bytes = IV, next 16 bytes = key  (note: reversed from your original script)
 async function deriveKeyIV(salt) {
-  const keyMat = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode('11'), 'PBKDF2', false, ['deriveBits']
-  );
-  const derived = new Uint8Array(await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-1', salt, iterations: 10 }, keyMat, 256
-  ));
-  // Python recompiler: iv = derived[:16], key = derived[16:32]
-  return { iv: derived.slice(0, 16), key: derived.slice(16, 32) };
+  const mat = await crypto.subtle.importKey('raw', new TextEncoder().encode('11'), 'PBKDF2', false, ['deriveBits']);
+  const d   = new Uint8Array(await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-1', salt, iterations:10 }, mat, 256));
+  return { iv: d.slice(0,16), key: d.slice(16,32) };
 }
-
-// ─── DECRYPT ─────────────────────────────────────────────────────────────────
 
 async function decryptSave(buffer) {
-  const b = new Uint8Array(buffer);
-
-  // Byte layout (from recompiler.py):
-  //   [0  .. 43] = dummy header        (44 bytes)
-  //   [44 .. 51] = password index      (8 bytes)
-  //   [52 .. 75] = salt                (24 bytes)
-  //   [76 ..   ] = AES-CBC ciphertext
-  rawHeader = b.slice(0, 44);
-  rawPwdIdx = b.slice(44, 52);
-  rawSalt   = b.slice(52, 76);
-  const enc = b.slice(76);
-
+  const b       = new Uint8Array(buffer);
+  rawHeader     = b.slice(0, 44);
+  rawPwdIdx     = b.slice(44, 52);
+  rawSalt       = b.slice(52, 76);
+  const enc     = b.slice(76);
   const { iv, key } = await deriveKeyIV(rawSalt);
-  const aesKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt']);
-  // Web Crypto AES-CBC automatically strips PKCS7 padding on decrypt
-  const decrypted = new Uint8Array(
-    await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, enc)
-  );
-
-  const decompressed = pako.inflate(decrypted);
-  return JSON.parse(new TextDecoder().decode(decompressed));
+  const aesKey  = await crypto.subtle.importKey('raw', key, { name:'AES-CBC' }, false, ['decrypt']);
+  const dec     = new Uint8Array(await crypto.subtle.decrypt({ name:'AES-CBC', iv }, aesKey, enc));
+  return JSON.parse(new TextDecoder().decode(pako.inflate(dec)));
 }
 
-// ─── RE-ENCRYPT ──────────────────────────────────────────────────────────────
-
-async function encryptSave(profileObj) {
-  // 1. Serialize + compress (level 6, matching Python's zlib.compress(data, level=6))
-  const json       = new TextEncoder().encode(JSON.stringify(profileObj));
+async function encryptSave(obj) {
+  const json       = new TextEncoder().encode(JSON.stringify(obj));
   const compressed = pako.deflate(json, { level: 6 });
-
-  // 2. New random salt (24 bytes) — matches Python's os.urandom(SALT_LENGTH)
-  const newSalt = crypto.getRandomValues(new Uint8Array(24));
+  const newSalt    = crypto.getRandomValues(new Uint8Array(24));
   const { iv, key } = await deriveKeyIV(newSalt);
-
-  // 3. Encrypt — Web Crypto AES-CBC automatically applies PKCS7 padding
-  const aesKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['encrypt']);
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, aesKey, compressed);
-
-  // 4. Reassemble: original header | original pwd index | NEW salt | ciphertext
-  const result = new Uint8Array(44 + 8 + 24 + encrypted.byteLength);
-  result.set(rawHeader,                     0);   // bytes  0-43
-  result.set(rawPwdIdx,                    44);   // bytes 44-51
-  result.set(newSalt,                      52);   // bytes 52-75 (fresh each export)
-  result.set(new Uint8Array(encrypted),    76);   // bytes 76+
-  return result;
+  const aesKey     = await crypto.subtle.importKey('raw', key, { name:'AES-CBC' }, false, ['encrypt']);
+  const enc        = await crypto.subtle.encrypt({ name:'AES-CBC', iv }, aesKey, compressed);
+  const out        = new Uint8Array(44 + 8 + 24 + enc.byteLength);
+  out.set(rawHeader, 0); out.set(rawPwdIdx, 44); out.set(newSalt, 52);
+  out.set(new Uint8Array(enc), 76);
+  return out;
 }
 
-// ─── FIELD UTILITIES ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// INSTA-MONKEY ENCODING (from dogz.js)
+// ═══════════════════════════════════════════════════════════════════
 
-// Read a dot-path from an object: getPath(obj, "powersData.BananaFarmer.quantity")
+function calcCrosspath(num) {
+  return {
+    is_new:   Boolean(num & 1),
+    path1:    (num >> 1) & 7,
+    path2:    (num >> 4) & 7,
+    path3:    (num >> 7) & 7,
+    quantity: (num >> 10) & 262143,
+  };
+}
+
+function encodeCrosspath(quantity, path1, path2, path3, is_new = false) {
+  return (quantity << 10) | (path3 << 7) | (path2 << 4) | (path1 << 1) | (is_new ? 1 : 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FIELD HELPERS (dot-path)
+// ═══════════════════════════════════════════════════════════════════
+
 function getPath(obj, path) {
-  return path.split('.').reduce((o, k) => (o != null && o[k] !== undefined ? o[k] : undefined), obj);
+  return path.split('.').reduce((o,k) => (o != null && o[k] !== undefined ? o[k] : undefined), obj);
 }
-
-// Write a value at a dot-path into an object
 function setPath(obj, path, value) {
-  const keys   = path.split('.');
-  const last   = keys.pop();
-  const target = keys.reduce((o, k) => o && o[k], obj);
-  if (target != null) target[last] = value;
+  const keys = path.split('.'), last = keys.pop();
+  const t = keys.reduce((o,k) => o && o[k], obj);
+  if (t != null) t[last] = value;
 }
 
-// ─── POPULATE / COLLECT ───────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// POPULATE / COLLECT  (simple data-key fields)
+// ═══════════════════════════════════════════════════════════════════
 
 function populateFields() {
   document.querySelectorAll('[data-key]').forEach(inp => {
-    const val = getPath(profile, inp.dataset.key);
-    if (val !== undefined) inp.value = val;
+    const v = getPath(profile, inp.dataset.key);
+    if (v !== undefined) inp.value = v;
   });
 }
 
@@ -265,40 +718,233 @@ function collectFields() {
   document.querySelectorAll('[data-key]').forEach(inp => {
     const raw = inp.value.trim();
     if (raw === '') return;
-    const original = getPath(profile, inp.dataset.key);
-    const value    = (typeof original === 'number') ? Number(raw) : raw;
-    setPath(profile, inp.dataset.key, value);
+    const orig = getPath(profile, inp.dataset.key);
+    setPath(profile, inp.dataset.key, typeof orig === 'number' ? Number(raw) : raw);
   });
 }
 
-// ─── DOWNLOADS ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// BUILD: POWERS
+// ═══════════════════════════════════════════════════════════════════
 
-function downloadJSON() {
-  collectFields();
-  const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' });
-  dl(blob, fileName.replace(/\.Save$/i, '') + '_decrypted.json');
-}
-
-async function downloadSave() {
-  collectFields();
-  setStatus('info', 'Re-encrypting...');
-  try {
-    const bytes = await encryptSave(profile);
-    dl(new Blob([bytes], { type: 'application/octet-stream' }), fileName);
-    setStatus('ok', 'Done. Replace your original Profile.Save with the downloaded file.');
-  } catch (e) {
-    setStatus('err', 'Re-encryption failed: ' + e.message);
-    console.error(e);
+function buildPowers() {
+  const grid = document.getElementById('powersGrid');
+  grid.innerHTML = '';
+  for (const p of POWERS) {
+    const qty = profile.powersData?.[p.key]?.quantity ?? 0;
+    const row = document.createElement('div');
+    row.className = 'power-row';
+    row.innerHTML = `<label>${p.name}</label><input type="number" min="0" value="${qty}" data-power="${p.key}">`;
+    grid.appendChild(row);
+    row.querySelector('input').addEventListener('change', e => {
+      if (!profile.powersData) profile.powersData = {};
+      if (!profile.powersData[p.key]) profile.powersData[p.key] = {};
+      profile.powersData[p.key].quantity = parseInt(e.target.value) || 0;
+    });
   }
 }
 
-function dl(blob, name) {
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
-  a.click();
-  URL.revokeObjectURL(a.href);
+// ═══════════════════════════════════════════════════════════════════
+// BUILD: INSTA-MONKEYS
+// ═══════════════════════════════════════════════════════════════════
+
+function buildInstas() {
+  const tabsEl   = document.getElementById('instaTowerTabs');
+  const panelsEl = document.getElementById('instaPanels');
+  tabsEl.innerHTML = ''; panelsEl.innerHTML = '';
+
+  for (const [tKey, tName] of TOWERS) {
+    // Tab
+    const tab = document.createElement('div');
+    tab.className = 'insta-tab';
+    tab.textContent = tName;
+    tab.dataset.tower = tKey;
+    tab.onclick = () => activateInstaTab(tKey);
+    tabsEl.appendChild(tab);
+
+    // Panel
+    const panel = document.createElement('div');
+    panel.className = 'insta-panel';
+    panel.id = 'insta-panel-' + tKey;
+
+    // Build a lookup: "p1-p2-p3" → {encodedKey, decoded}
+    const towerData = profile.instaTowers?.[tKey] ?? {};
+    const lookup = {};
+    for (const [k, _] of Object.entries(towerData)) {
+      const d = calcCrosspath(parseInt(k));
+      lookup[`${d.path1}-${d.path2}-${d.path3}`] = { encodedKey: k, decoded: d };
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'insta-grid';
+
+    for (const cp of CROSSPATHS) {
+      const entry = lookup[cp];
+      const qty   = entry ? entry.decoded.quantity : 0;
+
+      const cell  = document.createElement('div');
+      cell.className = 'insta-cell';
+      cell.innerHTML = `<label>${cp}</label><input type="number" min="0" value="${qty}" data-tower="${tKey}" data-cp="${cp}" data-encoded="${entry ? entry.encodedKey : ''}" data-isnew="${entry ? entry.decoded.is_new : false}">`;
+      grid.appendChild(cell);
+
+      const inp = cell.querySelector('input');
+      inp.addEventListener('change', () => {
+        const newQty = parseInt(inp.value) || 0;
+        const [p1,p2,p3] = cp.split('-').map(Number);
+        const isNew = inp.dataset.isnew === 'true';
+        const newEncoded = encodeCrosspath(newQty, p1, p2, p3, isNew);
+
+        if (!profile.instaTowers) profile.instaTowers = {};
+        if (!profile.instaTowers[tKey]) profile.instaTowers[tKey] = {};
+
+        const oldKey = inp.dataset.encoded;
+        if (oldKey) delete profile.instaTowers[tKey][oldKey];
+        profile.instaTowers[tKey][newEncoded] = newQty;
+        inp.dataset.encoded = newEncoded;
+      });
+    }
+    panel.appendChild(grid);
+    panelsEl.appendChild(panel);
+  }
+
+  // Activate first
+  activateInstaTab(TOWERS[0][0]);
 }
 
-// ─── JSON PREVIEW ─────────────────────────────────────────────────────────────
+function activateInstaTab(tKey) {
+  document.querySelectorAll('.insta-tab').forEach(t => t.classList.toggle('active', t.dataset.tower === tKey));
+  document.querySelectorAll('.insta-panel').forEach(p => p.classList.toggle('active', p.id === 'insta-panel-' + tKey));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BUILD: ACHIEVEMENTS
+// ═══════════════════════════════════════════════════════════════════
+
+let achFilter = 'all';
+
+function buildAchievements() {
+  renderAch();
+}
+
+function renderAch() {
+  const grid = document.getElementById('achGrid');
+  grid.innerHTML = '';
+  const ap = profile.achievementProgress ?? {};
+
+  for (const ach of ACHIEVEMENTS) {
+    if (achFilter === 'incomplete') {
+      const current = ap[ach.type] ?? 0;
+      if (current >= ach.goal) continue;
+    }
+    if (achFilter === 'hidden' && !ach.hidden) continue;
+
+    const current = ap[ach.type] ?? 0;
+    const row = document.createElement('div');
+    row.className = 'ach-row' + (ach.hidden ? ' hidden-ach' : '');
+
+    row.innerHTML = `
+      <div class="ach-info">
+        <div class="ach-name" title="${ach.name}">${ach.name}${ach.hidden ? ' <span style="color:#6a5a00">[hidden]</span>' : ''}</div>
+        <div class="ach-desc" title="${ach.desc}">${ach.desc}</div>
+      </div>
+      <input type="number" min="0" max="${ach.goal}" value="${current}" data-ach="${ach.type}">
+      <span class="ach-max">/ ${ach.goal.toLocaleString()}</span>
+    `;
+    grid.appendChild(row);
+
+    row.querySelector('input').addEventListener('change', e => {
+      if (!profile.achievementProgress) profile.achievementProgress = {};
+      profile.achievementProgress[ach.type] = parseInt(e.target.value) || 0;
+    });
+  }
+}
+
+function filterAch(f) { achFilter = f; renderAch(); }
+
+function achMaxAll() {
+  if (!profile.achievementProgress) profile.achievementProgress = {};
+  for (const ach of ACHIEVEMENTS) {
+    profile.achievementProgress[ach.type] = ach.goal;
+  }
+  renderAch();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BUILD: MAPS
+// ═══════════════════════════════════════════════════════════════════
+
+let mapDiffFilter = 'all';
+
+function buildMaps() { renderMaps(); }
+
+function renderMaps() {
+  const tbody = document.getElementById('mapsBody');
+  tbody.innerHTML = '';
+
+  for (const [tName, dName, diff] of MAPS) {
+    if (mapDiffFilter !== 'all' && diff !== mapDiffFilter) continue;
+
+    const mapData = profile.mapInfo?.maps?.[tName]?.difficult ?? {};
+    const tr = document.createElement('tr');
+    tr.dataset.diff = diff;
+
+    let html = `<td class="map-name" title="${diff}">${dName}</td>`;
+    for (const gm of GAMEMODES) {
+      const val = mapData[gm.diff]?.[gm.key] ?? 0;
+      html += `<td class="medal-col"><input type="number" min="0" max="4" value="${val}" data-map="${tName}" data-diff="${gm.diff}" data-mode="${gm.key}" style="width:42px"></td>`;
+    }
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+
+    tr.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const m = inp.dataset.map, d = inp.dataset.diff, k = inp.dataset.mode;
+        if (!profile.mapInfo) profile.mapInfo = {};
+        if (!profile.mapInfo.maps) profile.mapInfo.maps = {};
+        if (!profile.mapInfo.maps[m]) profile.mapInfo.maps[m] = {};
+        if (!profile.mapInfo.maps[m].difficult) profile.mapInfo.maps[m].difficult = {};
+        if (!profile.mapInfo.maps[m].difficult[d]) profile.mapInfo.maps[m].difficult[d] = {};
+        profile.mapInfo.maps[m].difficult[d][k] = parseInt(inp.value) || 0;
+      });
+    });
+  }
+}
+
+function filterMaps(f, btn) {
+  mapDiffFilter = f;
+  document.querySelectorAll('.map-filter button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMaps();
+}
+
+function mapsMaxAll() {
+  if (!profile.mapInfo) profile.mapInfo = {};
+  if (!profile.mapInfo.maps) profile.mapInfo.maps = {};
+  for (const [tName,,] of MAPS) {
+    if (!profile.mapInfo.maps[tName]) profile.mapInfo.maps[tName] = {};
+    if (!profile.mapInfo.maps[tName].difficult) profile.mapInfo.maps[tName].difficult = {};
+    for (const gm of GAMEMODES) {
+      if (!profile.mapInfo.maps[tName].difficult[gm.diff]) profile.mapInfo.maps[tName].difficult[gm.diff] = {};
+      profile.mapInfo.maps[tName].difficult[gm.diff][gm.key] = 4;
+    }
+  }
+  renderMaps();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════════════════
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RAW JSON PREVIEW
+// ═══════════════════════════════════════════════════════════════════
 
 function togglePreview() {
   const pre = document.getElementById('jsonPreview');
@@ -309,7 +955,37 @@ function togglePreview() {
   if (!open) pre.textContent = JSON.stringify(profile, null, 2);
 }
 
-// ─── STATUS / RESET ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// DOWNLOADS
+// ═══════════════════════════════════════════════════════════════════
+
+function downloadJSON() {
+  collectFields();
+  dl(new Blob([JSON.stringify(profile, null, 2)], { type:'application/json' }),
+     fileName.replace(/\.Save$/i, '') + '_decrypted.json');
+}
+
+async function downloadSave() {
+  collectFields();
+  setStatus('info', 'Re-encrypting...');
+  try {
+    const bytes = await encryptSave(profile);
+    dl(new Blob([bytes], { type:'application/octet-stream' }), fileName);
+    setStatus('ok', 'Done. Replace your original Profile.Save with the downloaded file.');
+  } catch(e) {
+    setStatus('err', 'Re-encryption failed: ' + e.message);
+    console.error(e);
+  }
+}
+
+function dl(blob, name) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATUS / RESET
+// ═══════════════════════════════════════════════════════════════════
 
 function setStatus(type, msg) {
   const el = document.getElementById('status');
@@ -322,11 +998,12 @@ function reset() {
   document.getElementById('uploadArea').style.display = '';
   document.getElementById('status').className = '';
   document.getElementById('status').textContent = '';
-  document.getElementById('jsonPreview').style.display = 'none';
   document.getElementById('fileInput').value = '';
 }
 
-// ─── FILE LOAD ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// FILE LOAD
+// ═══════════════════════════════════════════════════════════════════
 
 async function loadFile(file) {
   fileName = file.name;
@@ -336,14 +1013,20 @@ async function loadFile(file) {
     document.getElementById('uploadArea').style.display = 'none';
     document.getElementById('editor').style.display = 'block';
     populateFields();
+    buildPowers();
+    buildInstas();
+    buildAchievements();
+    buildMaps();
     setStatus('ok', 'Loaded: ' + file.name);
-  } catch (e) {
+  } catch(e) {
     setStatus('err', 'Decryption failed: ' + e.message);
     console.error(e);
   }
 }
 
-// ─── EVENT WIRING ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// EVENT WIRING
+// ═══════════════════════════════════════════════════════════════════
 
 document.getElementById('fileInput').addEventListener('change', e => {
   if (e.target.files[0]) loadFile(e.target.files[0]);
