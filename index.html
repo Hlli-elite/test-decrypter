@@ -204,15 +204,12 @@ async function decryptSave(buffer) {
 
   const { iv, key } = await deriveKeyIV(rawSalt);
   const aesKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt']);
+  // Web Crypto AES-CBC automatically strips PKCS7 padding on decrypt
   const decrypted = new Uint8Array(
     await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, enc)
   );
 
-  // Remove PKCS7 padding before decompressing
-  const padLen = decrypted[decrypted.length - 1];
-  const unpadded = decrypted.slice(0, decrypted.length - padLen);
-
-  const decompressed = pako.inflate(unpadded);
+  const decompressed = pako.inflate(decrypted);
   return JSON.parse(new TextDecoder().decode(decompressed));
 }
 
@@ -223,24 +220,15 @@ async function encryptSave(profileObj) {
   const json       = new TextEncoder().encode(JSON.stringify(profileObj));
   const compressed = pako.deflate(json, { level: 6 });
 
-  // 2. PKCS7 pad to 16-byte block boundary
-  //    Python uses cryptography.hazmat.primitives.padding.PKCS7 explicitly
-  const blockSize = 16;
-  const padLen    = blockSize - (compressed.length % blockSize);
-  const padded    = new Uint8Array(compressed.length + padLen);
-  padded.set(compressed);
-  padded.fill(padLen, compressed.length); // each pad byte = pad length value
-
-  // 3. New random salt (24 bytes) — matches Python's os.urandom(SALT_LENGTH)
+  // 2. New random salt (24 bytes) — matches Python's os.urandom(SALT_LENGTH)
   const newSalt = crypto.getRandomValues(new Uint8Array(24));
   const { iv, key } = await deriveKeyIV(newSalt);
 
-  // 4. Encrypt — input is already PKCS7-padded and block-aligned
-  //    Web Crypto AES-CBC does NOT add extra padding when input is block-aligned
+  // 3. Encrypt — Web Crypto AES-CBC automatically applies PKCS7 padding
   const aesKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['encrypt']);
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, aesKey, padded);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, aesKey, compressed);
 
-  // 5. Reassemble: original header | original pwd index | NEW salt | ciphertext
+  // 4. Reassemble: original header | original pwd index | NEW salt | ciphertext
   const result = new Uint8Array(44 + 8 + 24 + encrypted.byteLength);
   result.set(rawHeader,                     0);   // bytes  0-43
   result.set(rawPwdIdx,                    44);   // bytes 44-51
