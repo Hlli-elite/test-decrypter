@@ -121,11 +121,10 @@
 
   /* ── Unlockables ── */
   .unlock-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:8px; }
-  .unlock-row { display:flex; align-items:flex-start; gap:10px; background:#2a2a2a; border:1px solid #333; border-radius:4px; padding:10px 12px; }
-  .unlock-row input[type="checkbox"] { width:16px; height:16px; margin-top:2px; accent-color:#f0c040; cursor:pointer; flex-shrink:0; }
+  .unlock-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; background:#2a2a2a; border:1px solid #333; border-radius:4px; padding:10px 12px; }
   .unlock-info { flex:1; min-width:0; }
-  .unlock-name { font-size:13px; color:#d4d4d4; font-weight:bold; }
-  .unlock-desc { font-size:11px; color:#555; margin-top:2px; line-height:1.4; }
+  .unlock-name { font-size:13px; color:#d4d4d4; font-weight:bold; margin-bottom:3px; }
+  .unlock-desc { font-size:11px; color:#555; line-height:1.4; }
   .unlock-row.active { border-color:#4a6a3a; background:#1a2a1a; }
   .unlock-row.iap { border-left:3px solid #9cdcfe; }
 </style>
@@ -844,143 +843,133 @@ function flushHeavy(tab) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // BUILD: UNLOCKABLES
 // ═══════════════════════════════════════════════════════════════════
+//
+// Three types of entry:
+//   'dlc'    — just owned/not owned (IAP item in purchasedOneTimeItems).
+//              No "active" toggle — the game handles availability from ownership.
+//   'toggle' — has separate "Unlocked" and "Active" boolean keys.
+//   'iap'    — owned via IAP item AND has unlocked/active boolean pair.
 
-// Each entry describes one toggle. Types:
-//   'bool'   — sets a top-level boolean key
-//   'iap'    — adds/removes a string from purchase.purchasedOneTimeItems
-//   'multi'  — fires a custom apply/check function
 const UNLOCKS = [
-  // ── IAP / Purchased content ──────────────────────────────────────
+  // ── DLC / Pure IAP (owned or not, no active state) ───────────────
   {
-    id: 'doublecash', name: 'Double Cash Mode', iap: true,
-    desc: 'Unlocks Double Cash mode (2× cash from pops). Sets purchasedDoubleCashMode and adds btd6_doublecashmode.',
-    check: p => p.purchase?.purchasedDoubleCashMode === true,
-    apply: (p, on) => {
-      if (!p.purchase) p.purchase = {};
-      p.purchase.purchasedDoubleCashMode = on;
-      toggleIap(p, 'btd6_doublecashmode', on);
-    }
+    type: 'dlc', name: 'Legends: Rogue Mode', iapKey: 'btd6_legendsrogue',
+    desc: 'Grants ownership of the Rogue DLC game mode.',
+    extraApply: (p, on) => { if (on) p.hasPlayedPurchasedFrontier = true; }
   },
   {
-    id: 'rogue', name: 'Legends: Rogue Mode', iap: true,
-    desc: 'Unlocks the Rogue game mode (Legends). Adds btd6_legendsrogue and sets hasPlayedPurchasedFrontier.',
-    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_legendsrogue'),
-    apply: (p, on) => {
-      toggleIap(p, 'btd6_legendsrogue', on);
-      if (on) p.hasPlayedPurchasedFrontier = true;
-    }
+    type: 'dlc', name: 'Legends: Frontier Mode', iapKey: 'btd6_legendsfrontier',
+    desc: 'Grants ownership of the Frontier DLC game mode.',
+    extraApply: null
   },
   {
-    id: 'frontier', name: 'Legends: Frontier Mode', iap: true,
-    desc: 'Unlocks the Frontier game mode (Legends). Adds btd6_legendsfrontier.',
-    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_legendsfrontier'),
-    apply: (p, on) => { toggleIap(p, 'btd6_legendsfrontier', on); }
-  },
-  {
-    id: 'beast', name: 'Beast Handler Tower', iap: true,
-    desc: 'Unlocks the Beast Handler tower. Adds btd6_beast to purchased items.',
-    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_beast'),
-    apply: (p, on) => {
-      toggleIap(p, 'btd6_beast', on);
-      if (on && p.unlockedTowers && !p.unlockedTowers.includes('BeastHandler'))
+    type: 'dlc', name: 'Beast Handler Tower', iapKey: 'btd6_beast',
+    desc: 'Grants ownership of the Beast Handler tower DLC.',
+    extraApply: (p, on) => {
+      if (!p.unlockedTowers) p.unlockedTowers = [];
+      if (on && !p.unlockedTowers.includes('BeastHandler'))
         p.unlockedTowers.push('BeastHandler');
     }
   },
   {
-    id: 'knowledge', name: 'Monkey Knowledge', iap: true,
-    desc: 'Unlocks the Monkey Knowledge system. Adds btd6_knowledgeunlocked and sets knowledgeDisabled=false.',
-    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_knowledgeunlocked'),
-    apply: (p, on) => {
-      toggleIap(p, 'btd6_knowledgeunlocked', on);
-      p.knowledgeDisabled = !on;
-    }
-  },
-  {
-    id: 'mapeditor', name: 'Map Editor', iap: true,
-    desc: 'Unlocks the Map Editor. Adds btd6_mapeditorsupporter_new and sets hasUnlockedMapEditor=true.',
-    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_mapeditorsupporter_new'),
-    apply: (p, on) => {
-      toggleIap(p, 'btd6_mapeditorsupporter_new', on);
+    type: 'dlc', name: 'Map Editor', iapKey: 'btd6_mapeditorsupporter_new',
+    desc: 'Grants ownership of the Map Editor.',
+    extraApply: (p, on) => {
       p.hasUnlockedMapEditor = on;
       if (on) p.seenMapEditorInfoPopup = true;
     }
   },
-  // ── Game modifiers ───────────────────────────────────────────────
+
+  // ── IAP + unlock/active pair ──────────────────────────────────────
   {
-    id: 'fasttrack', name: 'Fast Track', iap: false,
-    desc: 'Unlocks and activates Fast Track (speed up games). Sets unlockedFastTrack, fastTrackActive, seenFastTrack.',
-    check: p => p.unlockedFastTrack === true,
-    apply: (p, on) => {
-      p.unlockedFastTrack = on;
-      p.fastTrackActive = on;
-      p.seenFastTrack = on;
-    }
+    type: 'iap', name: 'Double Cash Mode',
+    iapKey: 'btd6_doublecashmode',
+    iapCheck:  p => p.purchase?.purchasedDoubleCashMode === true,
+    iapApply:  (p, on) => { if (!p.purchase) p.purchase = {}; p.purchase.purchasedDoubleCashMode = on; },
+    desc: 'Unlocks Double Cash mode (2× cash from pops).',
+    // Double Cash has no separate "active" toggle in the save — owning it = can use it
+    activeKey: null
   },
   {
-    id: 'perks', name: 'Perks Enabled', iap: false,
-    desc: 'Enables the perks system (perksToggledOn). Required for some hero abilities.',
-    check: p => p.perksToggledOn === true,
-    apply: (p, on) => { p.perksToggledOn = on; }
+    type: 'iap', name: 'Monkey Knowledge',
+    iapKey: 'btd6_knowledgeunlocked',
+    iapCheck: null,
+    iapApply: null,
+    desc: 'Unlocks the Monkey Knowledge system.',
+    activeKey: null,   // active state is just knowledgeDisabled=false
+    unlockedKey: null,
+    // handled via extraApply
+    extraUnlockApply: (p, on) => {
+      toggleIap(p, 'btd6_knowledgeunlocked', on);
+      p.knowledgeDisabled = !on;
+      if (on) p.newKnowledgePoints = true;
+    },
+    extraActiveApply: (p, on) => { p.knowledgeDisabled = !on; },
+    checkUnlocked: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_knowledgeunlocked'),
+    checkActive:   p => p.knowledgeDisabled === false
   },
-  // ── Cosmetic modifiers ───────────────────────────────────────────
+
+  // ── Simple toggle (unlocked + active booleans) ────────────────────
   {
-    id: 'bigbloons', name: 'Big Bloons Modifier', iap: false,
-    desc: 'Unlocks (and activates) the Big Bloons visual modifier.',
-    check: p => p.unlockedBigBloons === true,
-    apply: (p, on) => {
-      p.unlockedBigBloons = on; p.bigBloonsActive = on; p.seenBigBloons = on;
-    }
-  },
-  {
-    id: 'smallbloons', name: 'Small Bloons Modifier', iap: false,
-    desc: 'Unlocks (and activates) the Small Bloons visual modifier.',
-    check: p => p.unlockedSmallBloons === true,
-    apply: (p, on) => {
-      p.unlockedSmallBloons = on; p.smallBloonsActive = on; p.seenSmallBloons = on;
-    }
-  },
-  {
-    id: 'bigtowers', name: 'Big Towers Modifier', iap: false,
-    desc: 'Unlocks (and activates) the Big Towers visual modifier.',
-    check: p => p.unlockedBigTowers === true,
-    apply: (p, on) => {
-      p.unlockedBigTowers = on; p.bigTowersActive = on; p.seenBigTowers = on;
-    }
+    type: 'toggle', name: 'Fast Track',
+    unlockedKey: 'unlockedFastTrack', activeKey: 'fastTrackActive',
+    seenKey: 'seenFastTrack',
+    desc: 'Lets you speed up games in progress.'
   },
   {
-    id: 'smalltowers', name: 'Small Towers Modifier', iap: false,
-    desc: 'Unlocks (and activates) the Small Towers visual modifier.',
-    check: p => p.unlockedSmallTowers === true,
-    apply: (p, on) => {
-      p.unlockedSmallTowers = on; p.smallTowersActive = on; p.seenSmallTowers = on;
-    }
+    type: 'toggle', name: 'Big Bloons',
+    unlockedKey: 'unlockedBigBloons', activeKey: 'bigBloonsActive',
+    seenKey: 'seenBigBloons',
+    desc: 'Visual modifier — bloons appear larger.'
   },
   {
-    id: 'smallbosses', name: 'Small Bosses Modifier', iap: false,
-    desc: 'Unlocks (and activates) the Small Bosses visual modifier.',
-    check: p => p.unlockedSmallBosses === true,
-    apply: (p, on) => {
-      p.unlockedSmallBosses = on; p.smallBossesActive = on; p.seenSmallBosses = on;
-    }
-  },
-  // ── Profile / progression ────────────────────────────────────────
-  {
-    id: 'oompa', name: 'Oompa Loompa Easter Egg', iap: false,
-    desc: 'Activates the oompaLoompad flag (unlocks the hidden easter egg skin).',
-    check: p => p.oompaLoompad === true,
-    apply: (p, on) => { p.oompaLoompad = on; }
+    type: 'toggle', name: 'Small Bloons',
+    unlockedKey: 'unlockedSmallBloons', activeKey: 'smallBloonsActive',
+    seenKey: 'seenSmallBloons',
+    desc: 'Visual modifier — bloons appear smaller.'
   },
   {
-    id: 'colorblind', name: 'Colour Blind Mode', iap: false,
-    desc: 'Toggles the colour blind accessibility mode.',
-    check: p => p.colorBlindModeOn === true,
-    apply: (p, on) => { p.colorBlindModeOn = on; }
+    type: 'toggle', name: 'Big Towers',
+    unlockedKey: 'unlockedBigTowers', activeKey: 'bigTowersActive',
+    seenKey: 'seenBigTowers',
+    desc: 'Visual modifier — towers appear larger.'
+  },
+  {
+    type: 'toggle', name: 'Small Towers',
+    unlockedKey: 'unlockedSmallTowers', activeKey: 'smallTowersActive',
+    seenKey: 'seenSmallTowers',
+    desc: 'Visual modifier — towers appear smaller.'
+  },
+  {
+    type: 'toggle', name: 'Small Bosses',
+    unlockedKey: 'unlockedSmallBosses', activeKey: 'smallBossesActive',
+    seenKey: 'seenSmallBosses',
+    desc: 'Visual modifier — boss bloons appear smaller.'
+  },
+  {
+    type: 'toggle', name: 'Perks',
+    unlockedKey: null, activeKey: 'perksToggledOn',
+    seenKey: null,
+    desc: 'Enables the perks system for hero abilities.'
+  },
+  {
+    type: 'toggle', name: 'Oompa Loompa Easter Egg',
+    unlockedKey: 'unlockedBigBloons',  // reuses big bloons gate in-game
+    activeKey: 'oompaLoompad',
+    seenKey: null,
+    desc: 'Activates the hidden Oompa Loompa easter egg skin flag.'
+  },
+  {
+    type: 'toggle', name: 'Colour Blind Mode',
+    unlockedKey: null, activeKey: 'colorBlindModeOn',
+    seenKey: null,
+    desc: 'Enables the colour blind accessibility setting.'
   },
 ];
 
-// Add/remove a string from purchase.purchasedOneTimeItems
 function toggleIap(p, item, on) {
   if (!p.purchase) p.purchase = {};
   if (!p.purchase.purchasedOneTimeItems) p.purchase.purchasedOneTimeItems = [];
@@ -996,28 +985,108 @@ function buildUnlocks() {
   const frag = document.createDocumentFragment();
 
   for (const u of UNLOCKS) {
-    const active = u.check(profile);
     const row = document.createElement('div');
-    row.className = 'unlock-row' + (active ? ' active' : '') + (u.iap ? ' iap' : '');
-
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = 'unlock_' + u.id;
-    cb.checked = active;
-    cb.addEventListener('change', () => {
-      u.apply(profile, cb.checked);
-      row.classList.toggle('active', cb.checked);
-    });
+    row.className = 'unlock-row' + (u.type === 'dlc' || u.type === 'iap' ? ' iap' : '');
 
     const info = document.createElement('div');
     info.className = 'unlock-info';
-    info.innerHTML = `<label for="unlock_${u.id}" class="unlock-name" style="cursor:pointer">${u.name}</label><div class="unlock-desc">${u.desc}</div>`;
+    info.innerHTML = `<div class="unlock-name">${u.name}</div><div class="unlock-desc">${u.desc}</div>`;
 
-    row.appendChild(cb);
+    const controls = document.createElement('div');
+    controls.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
+
+    if (u.type === 'dlc') {
+      // Single "Owned" checkbox
+      const owned = (p => (p.purchase?.purchasedOneTimeItems || []).includes(u.iapKey))(profile);
+      const label = makeCheckLabel('Owned', owned, on => {
+        toggleIap(profile, u.iapKey, on);
+        if (u.extraApply) u.extraApply(profile, on);
+        row.classList.toggle('active', on);
+      });
+      if (owned) row.classList.add('active');
+      controls.appendChild(label);
+
+    } else if (u.type === 'iap') {
+      // Monkey Knowledge / Double Cash: special case with custom check/apply
+      const isUnlocked = u.checkUnlocked ? u.checkUnlocked(profile)
+        : (p => (p.purchase?.purchasedOneTimeItems || []).includes(u.iapKey))(profile);
+      const isActive = u.checkActive ? u.checkActive(profile)
+        : (u.activeKey ? profile[u.activeKey] === true : isUnlocked);
+
+      const lU = makeCheckLabel('Unlocked', isUnlocked, on => {
+        if (u.extraUnlockApply) u.extraUnlockApply(profile, on);
+        else { toggleIap(profile, u.iapKey, on); if (u.iapApply) u.iapApply(profile, on); }
+        row.classList.toggle('active', on);
+      });
+      controls.appendChild(lU);
+
+      if (u.activeKey || u.checkActive) {
+        const lA = makeCheckLabel('Active', isActive, on => {
+          if (u.extraActiveApply) u.extraActiveApply(profile, on);
+          else if (u.activeKey) profile[u.activeKey] = on;
+        });
+        controls.appendChild(lA);
+      }
+
+      if (isUnlocked) row.classList.add('active');
+
+    } else {
+      // type === 'toggle': unlocked + active checkboxes
+      const isUnlocked = u.unlockedKey ? profile[u.unlockedKey] === true : true;
+      const isActive   = u.activeKey   ? profile[u.activeKey]   === true : false;
+
+      if (u.unlockedKey) {
+        const lU = makeCheckLabel('Unlocked', isUnlocked, on => {
+          profile[u.unlockedKey] = on;
+          if (u.seenKey) profile[u.seenKey] = on;
+          // if locking, also deactivate
+          if (!on && u.activeKey) { profile[u.activeKey] = false; syncCb(row, 'Active', false); }
+          row.classList.toggle('active', on || (u.activeKey && profile[u.activeKey]));
+        });
+        controls.appendChild(lU);
+      }
+
+      if (u.activeKey) {
+        const lA = makeCheckLabel('Active', isActive, on => {
+          profile[u.activeKey] = on;
+          // activating implies unlocked
+          if (on && u.unlockedKey) { profile[u.unlockedKey] = true; if (u.seenKey) profile[u.seenKey] = true; syncCb(row, 'Unlocked', true); }
+          row.classList.toggle('active', on);
+        });
+        controls.appendChild(lA);
+      }
+
+      if (isUnlocked || isActive) row.classList.add('active');
+    }
+
     row.appendChild(info);
+    row.appendChild(controls);
     frag.appendChild(row);
   }
+
   grid.appendChild(frag);
+}
+
+// Create a labelled checkbox div
+function makeCheckLabel(labelText, checked, onChange) {
+  const wrap = document.createElement('label');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:#888;white-space:nowrap;';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = checked;
+  cb.dataset.label = labelText;
+  cb.style.accentColor = '#f0c040';
+  cb.addEventListener('change', () => onChange(cb.checked));
+  wrap.appendChild(cb);
+  wrap.appendChild(document.createTextNode(labelText));
+  return wrap;
+}
+
+// Sync a named checkbox in a row without firing its change event
+function syncCb(row, labelText, value) {
+  row.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    if (cb.dataset.label === labelText) cb.checked = value;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
