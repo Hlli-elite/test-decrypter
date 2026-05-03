@@ -118,6 +118,16 @@
 
   /* ── Warning banner ── */
   .warn { background:#3a2a00; border:1px solid #6a5000; border-radius:4px; padding:6px 10px; font-size:11px; color:#f0c040; margin-bottom:10px; }
+
+  /* ── Unlockables ── */
+  .unlock-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:8px; }
+  .unlock-row { display:flex; align-items:flex-start; gap:10px; background:#2a2a2a; border:1px solid #333; border-radius:4px; padding:10px 12px; }
+  .unlock-row input[type="checkbox"] { width:16px; height:16px; margin-top:2px; accent-color:#f0c040; cursor:pointer; flex-shrink:0; }
+  .unlock-info { flex:1; min-width:0; }
+  .unlock-name { font-size:13px; color:#d4d4d4; font-weight:bold; }
+  .unlock-desc { font-size:11px; color:#555; margin-top:2px; line-height:1.4; }
+  .unlock-row.active { border-color:#4a6a3a; background:#1a2a1a; }
+  .unlock-row.iap { border-left:3px solid #9cdcfe; }
 </style>
 </head>
 <body>
@@ -142,6 +152,7 @@
     <div class="tab" onclick="switchTab('instas')">Insta-Monkeys</div>
     <div class="tab" onclick="switchTab('achievements')">Achievements</div>
     <div class="tab" onclick="switchTab('maps')">Map Medals</div>
+    <div class="tab" onclick="switchTab('unlocks')">Unlockables</div>
     <div class="tab" onclick="switchTab('raw')">Raw JSON</div>
   </div>
 
@@ -314,6 +325,14 @@
       </thead>
       <tbody id="mapsBody"></tbody>
     </table>
+  </div>
+
+  <!-- ══ TAB: Unlockables ════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-unlocks">
+    <h2>Unlockables &amp; IAP</h2>
+    <div class="warn">⚠ These flags simulate purchases. Use at your own risk — some may require a server-side validation that this editor cannot bypass (e.g. Monkey Knowledge unlock).</div>
+    <p style="margin-bottom:10px;font-size:12px;color:#888;">Blue border = affects <code>purchase.purchasedOneTimeItems</code> array (IAP items). Green border = already active.</p>
+    <div class="unlock-grid" id="unlockGrid"></div>
   </div>
 
   <!-- ══ TAB: Raw JSON ════════════════════════════════════════════ -->
@@ -784,6 +803,7 @@ function switchTab(name) {
   if (name === 'instas')       renderInstaPanel(currentInstaTower);
   if (name === 'achievements') renderAch();
   if (name === 'maps')         renderMaps();
+  if (name === 'unlocks'       && !document.getElementById('unlockGrid').children.length) buildUnlocks();
 }
 
 // Read inputs back into profile before we destroy their DOM nodes
@@ -821,6 +841,183 @@ function flushHeavy(tab) {
     });
     document.getElementById('mapsBody').innerHTML = '';
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BUILD: UNLOCKABLES
+// ═══════════════════════════════════════════════════════════════════
+
+// Each entry describes one toggle. Types:
+//   'bool'   — sets a top-level boolean key
+//   'iap'    — adds/removes a string from purchase.purchasedOneTimeItems
+//   'multi'  — fires a custom apply/check function
+const UNLOCKS = [
+  // ── IAP / Purchased content ──────────────────────────────────────
+  {
+    id: 'doublecash', name: 'Double Cash Mode', iap: true,
+    desc: 'Unlocks Double Cash mode (2× cash from pops). Sets purchasedDoubleCashMode and adds btd6_doublecashmode.',
+    check: p => p.purchase?.purchasedDoubleCashMode === true,
+    apply: (p, on) => {
+      if (!p.purchase) p.purchase = {};
+      p.purchase.purchasedDoubleCashMode = on;
+      toggleIap(p, 'btd6_doublecashmode', on);
+    }
+  },
+  {
+    id: 'rogue', name: 'Legends: Rogue Mode', iap: true,
+    desc: 'Unlocks the Rogue game mode (Legends). Adds btd6_legendsrogue and sets hasPlayedPurchasedFrontier.',
+    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_legendsrogue'),
+    apply: (p, on) => {
+      toggleIap(p, 'btd6_legendsrogue', on);
+      if (on) p.hasPlayedPurchasedFrontier = true;
+    }
+  },
+  {
+    id: 'frontier', name: 'Legends: Frontier Mode', iap: true,
+    desc: 'Unlocks the Frontier game mode (Legends). Adds btd6_legendsfrontier.',
+    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_legendsfrontier'),
+    apply: (p, on) => { toggleIap(p, 'btd6_legendsfrontier', on); }
+  },
+  {
+    id: 'beast', name: 'Beast Handler Tower', iap: true,
+    desc: 'Unlocks the Beast Handler tower. Adds btd6_beast to purchased items.',
+    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_beast'),
+    apply: (p, on) => {
+      toggleIap(p, 'btd6_beast', on);
+      if (on && p.unlockedTowers && !p.unlockedTowers.includes('BeastHandler'))
+        p.unlockedTowers.push('BeastHandler');
+    }
+  },
+  {
+    id: 'knowledge', name: 'Monkey Knowledge', iap: true,
+    desc: 'Unlocks the Monkey Knowledge system. Adds btd6_knowledgeunlocked and sets knowledgeDisabled=false.',
+    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_knowledgeunlocked'),
+    apply: (p, on) => {
+      toggleIap(p, 'btd6_knowledgeunlocked', on);
+      p.knowledgeDisabled = !on;
+    }
+  },
+  {
+    id: 'mapeditor', name: 'Map Editor', iap: true,
+    desc: 'Unlocks the Map Editor. Adds btd6_mapeditorsupporter_new and sets hasUnlockedMapEditor=true.',
+    check: p => (p.purchase?.purchasedOneTimeItems || []).includes('btd6_mapeditorsupporter_new'),
+    apply: (p, on) => {
+      toggleIap(p, 'btd6_mapeditorsupporter_new', on);
+      p.hasUnlockedMapEditor = on;
+      if (on) p.seenMapEditorInfoPopup = true;
+    }
+  },
+  // ── Game modifiers ───────────────────────────────────────────────
+  {
+    id: 'fasttrack', name: 'Fast Track', iap: false,
+    desc: 'Unlocks and activates Fast Track (speed up games). Sets unlockedFastTrack, fastTrackActive, seenFastTrack.',
+    check: p => p.unlockedFastTrack === true,
+    apply: (p, on) => {
+      p.unlockedFastTrack = on;
+      p.fastTrackActive = on;
+      p.seenFastTrack = on;
+    }
+  },
+  {
+    id: 'perks', name: 'Perks Enabled', iap: false,
+    desc: 'Enables the perks system (perksToggledOn). Required for some hero abilities.',
+    check: p => p.perksToggledOn === true,
+    apply: (p, on) => { p.perksToggledOn = on; }
+  },
+  // ── Cosmetic modifiers ───────────────────────────────────────────
+  {
+    id: 'bigbloons', name: 'Big Bloons Modifier', iap: false,
+    desc: 'Unlocks (and activates) the Big Bloons visual modifier.',
+    check: p => p.unlockedBigBloons === true,
+    apply: (p, on) => {
+      p.unlockedBigBloons = on; p.bigBloonsActive = on; p.seenBigBloons = on;
+    }
+  },
+  {
+    id: 'smallbloons', name: 'Small Bloons Modifier', iap: false,
+    desc: 'Unlocks (and activates) the Small Bloons visual modifier.',
+    check: p => p.unlockedSmallBloons === true,
+    apply: (p, on) => {
+      p.unlockedSmallBloons = on; p.smallBloonsActive = on; p.seenSmallBloons = on;
+    }
+  },
+  {
+    id: 'bigtowers', name: 'Big Towers Modifier', iap: false,
+    desc: 'Unlocks (and activates) the Big Towers visual modifier.',
+    check: p => p.unlockedBigTowers === true,
+    apply: (p, on) => {
+      p.unlockedBigTowers = on; p.bigTowersActive = on; p.seenBigTowers = on;
+    }
+  },
+  {
+    id: 'smalltowers', name: 'Small Towers Modifier', iap: false,
+    desc: 'Unlocks (and activates) the Small Towers visual modifier.',
+    check: p => p.unlockedSmallTowers === true,
+    apply: (p, on) => {
+      p.unlockedSmallTowers = on; p.smallTowersActive = on; p.seenSmallTowers = on;
+    }
+  },
+  {
+    id: 'smallbosses', name: 'Small Bosses Modifier', iap: false,
+    desc: 'Unlocks (and activates) the Small Bosses visual modifier.',
+    check: p => p.unlockedSmallBosses === true,
+    apply: (p, on) => {
+      p.unlockedSmallBosses = on; p.smallBossesActive = on; p.seenSmallBosses = on;
+    }
+  },
+  // ── Profile / progression ────────────────────────────────────────
+  {
+    id: 'oompa', name: 'Oompa Loompa Easter Egg', iap: false,
+    desc: 'Activates the oompaLoompad flag (unlocks the hidden easter egg skin).',
+    check: p => p.oompaLoompad === true,
+    apply: (p, on) => { p.oompaLoompad = on; }
+  },
+  {
+    id: 'colorblind', name: 'Colour Blind Mode', iap: false,
+    desc: 'Toggles the colour blind accessibility mode.',
+    check: p => p.colorBlindModeOn === true,
+    apply: (p, on) => { p.colorBlindModeOn = on; }
+  },
+];
+
+// Add/remove a string from purchase.purchasedOneTimeItems
+function toggleIap(p, item, on) {
+  if (!p.purchase) p.purchase = {};
+  if (!p.purchase.purchasedOneTimeItems) p.purchase.purchasedOneTimeItems = [];
+  const arr = p.purchase.purchasedOneTimeItems;
+  const idx = arr.indexOf(item);
+  if (on && idx === -1) arr.push(item);
+  if (!on && idx !== -1) arr.splice(idx, 1);
+}
+
+function buildUnlocks() {
+  const grid = document.getElementById('unlockGrid');
+  grid.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  for (const u of UNLOCKS) {
+    const active = u.check(profile);
+    const row = document.createElement('div');
+    row.className = 'unlock-row' + (active ? ' active' : '') + (u.iap ? ' iap' : '');
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'unlock_' + u.id;
+    cb.checked = active;
+    cb.addEventListener('change', () => {
+      u.apply(profile, cb.checked);
+      row.classList.toggle('active', cb.checked);
+    });
+
+    const info = document.createElement('div');
+    info.className = 'unlock-info';
+    info.innerHTML = `<label for="unlock_${u.id}" class="unlock-name" style="cursor:pointer">${u.name}</label><div class="unlock-desc">${u.desc}</div>`;
+
+    row.appendChild(cb);
+    row.appendChild(info);
+    frag.appendChild(row);
+  }
+  grid.appendChild(frag);
 }
 
 // ═══════════════════════════════════════════════════════════════════
