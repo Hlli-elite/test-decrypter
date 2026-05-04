@@ -357,6 +357,10 @@
       <button class="btn" onclick="artifactMaxLimit()">Raise Limit to 9999</button>
       <button class="btn" onclick="artifactClearAll()">Clear All Artifacts</button>
     </div>
+    <div style="margin-bottom:14px;">
+      <h3 style="font-size:13px;color:#ffe082;margin-bottom:8px;">🪙 Tokens (unlimited, do not count toward artifact limit)</h3>
+      <div id="tokenSection" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
+    </div>
     <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;" id="artifactFilters">
       <button class="btn btn-sm art-filter active" data-f="all">All</button>
       <button class="btn btn-sm art-filter" data-f="Primary" style="color:#f4b942">Primary</button>
@@ -365,7 +369,6 @@
       <button class="btn btn-sm art-filter" data-f="Support" style="color:#a5d6a7">Support</button>
       <button class="btn btn-sm art-filter" data-f="AllMonkeyTowerSets">General</button>
       <button class="btn btn-sm art-filter" data-f="boss" style="color:#ef9a9a">Boss</button>
-      <button class="btn btn-sm art-filter" data-f="Token" style="color:#ffe082">Token</button>
     </div>
     <div class="artifact-grid" id="artifactGrid"></div>
   </div>
@@ -947,24 +950,81 @@ function removeArtifact(name) {
   if (idx !== -1) arr.splice(idx, 1);
 }
 
+// Count how many copies of a specific token are in the inventory
+function countTokens(name) {
+  const arr = getArtifactArray();
+  if (!arr) return 0;
+  return arr.filter(a => a.artifactName === name).length;
+}
+
+// Set exactly qty copies of a token in the inventory (add or remove to reach qty)
+function setTokenCount(name, d, qty) {
+  const arr = getArtifactArray();
+  if (!arr) return;
+  // Remove all existing copies first
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i].artifactName === name) arr.splice(i, 1);
+  }
+  // Add qty copies
+  for (let i = 0; i < qty; i++) {
+    arr.push({ artifactName: name, tier: d.tier, baseId: d.baseId, lootType: 1, startingArtifact: false, frontierIds: [] });
+  }
+}
+
 function updateArtifactCount() {
   const arr = getArtifactArray();
   const limit = getArtifactLimit();
   const nonToken = arr ? arr.filter(a => !isToken(a.artifactName)).length : 0;
-  const total = arr ? arr.length : 0;
+  const tokenTotal = arr ? arr.filter(a => isToken(a.artifactName)).length : 0;
   document.getElementById('artifactCount').textContent =
-    `${nonToken}/${limit} artifacts (+ ${total - nonToken} tokens)`;
+    `${nonToken}/${limit} artifacts  •  ${tokenTotal} token${tokenTotal !== 1 ? 's' : ''}`;
 }
 
 let artFilter = 'all';
 
 function buildArtifacts() {
   const grid = document.getElementById('artifactGrid');
+  const tokenSection = document.getElementById('tokenSection');
   grid.innerHTML = '';
+  tokenSection.innerHTML = '';
 
   if (!getRogueSave()) {
     grid.innerHTML = '<p style="color:#666;font-size:13px;">No MainSave Rogue data found in this save file.</p>';
     return;
+  }
+
+  // ── Token section: one quantity input per token type ──────────────
+  const TOKEN_NAMES = ['Token', 'TokenMonkeyMoney', 'TokenRogueXp'];
+  const TOKEN_LABELS = { Token: 'Trade Token', TokenMonkeyMoney: 'Monkey Money Token', TokenRogueXp: 'Rogue XP Token' };
+  const TOKEN_COLORS = { Token: '#ffe082', TokenMonkeyMoney: '#ffcc02', TokenRogueXp: '#ce93d8' };
+
+  for (const tName of TOKEN_NAMES) {
+    const d = ARTIFACT_DATA[tName];
+    const currentQty = countTokens(tName);
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:#2a2a1a;border:1px solid #5a4a00;border-radius:4px;padding:8px 12px;display:flex;align-items:center;gap:10px;';
+
+    const label = document.createElement('span');
+    label.style.cssText = `font-size:12px;color:${TOKEN_COLORS[tName]};white-space:nowrap;`;
+    label.textContent = TOKEN_LABELS[tName];
+
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '0';
+    inp.value = currentQty;
+    inp.style.cssText = 'width:70px;';
+    inp.dataset.token = tName;
+    inp.addEventListener('change', () => {
+      const qty = Math.max(0, parseInt(inp.value) || 0);
+      inp.value = qty;
+      setTokenCount(tName, d, qty);
+      updateArtifactCount();
+    });
+
+    wrap.appendChild(label);
+    wrap.appendChild(inp);
+    tokenSection.appendChild(wrap);
   }
 
   // Delegated filter buttons
@@ -977,8 +1037,11 @@ function buildArtifacts() {
     filterArtifactCards();
   });
 
+  // ── Regular artifact grid (no tokens) ────────────────────────────
   const frag = document.createDocumentFragment();
   for (const [name, d] of Object.entries(ARTIFACT_DATA)) {
+    if (isToken(name)) continue; // tokens handled above
+
     const owned = hasArtifact(name);
     const card = document.createElement('div');
     card.className = 'art-card' + (owned ? ' owned' : '');
@@ -1029,8 +1092,7 @@ function filterArtifactCards() {
     const t = card.dataset.type;
     const show = artFilter === 'all'
       || artFilter === t
-      || (artFilter === 'boss' && t === 'boss')
-      || (artFilter === 'Token' && t === 'Token');
+      || (artFilter === 'boss' && t === 'boss');
     card.style.display = show ? '' : 'none';
   });
 }
@@ -1048,11 +1110,12 @@ function artifactClearAll() {
   const rs = getRogueSave();
   if (!rs) return;
   rs.artifactsInventory = [];
-  // Re-render
   document.querySelectorAll('.art-card').forEach(card => {
     card.classList.remove('owned');
     card.querySelector('input').checked = false;
   });
+  // Zero token inputs
+  document.querySelectorAll('#tokenSection input[type="number"]').forEach(inp => inp.value = 0);
   updateArtifactCount();
 }
 
