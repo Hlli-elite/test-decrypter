@@ -166,6 +166,8 @@
     <div class="tab" onclick="switchTab('maps')">Map Medals</div>
     <div class="tab" onclick="switchTab('unlocks')">Unlockables</div>
     <div class="tab" onclick="switchTab('artifacts')">Rogue Artifacts</div>
+    <div class="tab" onclick="switchTab('roguestats')">Rogue Stats</div>
+    <div class="tab" onclick="switchTab('frontier')">Frontier</div>
     <div class="tab" onclick="switchTab('raw')">Raw JSON</div>
   </div>
 
@@ -371,6 +373,47 @@
       <button class="btn btn-sm art-filter" data-f="boss" style="color:#ef9a9a">Boss</button>
     </div>
     <div class="artifact-grid" id="artifactGrid"></div>
+  </div>
+
+  <!-- ══ TAB: Rogue Stats ════════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-roguestats">
+    <h2>Rogue Legends — Stats &amp; XP Shop</h2>
+    <div class="warn">⚠ Edits apply to <strong>legendsData.rogueSaves.MainSave</strong> and <strong>legendsData</strong>. Requires an active Rogue save.</div>
+
+    <h3 style="margin:12px 0 8px;font-size:13px;color:#9cdcfe;">Run Stats</h3>
+    <div class="grid-2" id="rogueStatsGrid"></div>
+
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#9cdcfe;">Legend XP &amp; Global</h3>
+    <div class="grid-2" id="rogueLegendGrid"></div>
+
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#ce93d8;">XP Shop — Unlocked Levels
+      <span style="font-size:11px;color:#555;font-weight:normal;margin-left:8px;">(legendsData.unlockedRogueXpShopItems)</span>
+    </h3>
+    <div class="warn" style="margin-bottom:8px;">These are the <em>unlocked</em> levels bought with Legend XP. The values shown are the max unlockable per item as seen in the example save.</div>
+    <div class="grid-2" id="rogueXpShopGrid"></div>
+
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#ce93d8;">XP Shop — Applied to Current Run
+      <span style="font-size:11px;color:#555;font-weight:normal;margin-left:8px;">(rogueSaves.MainSave.appliedRogueXpShopItems)</span>
+    </h3>
+    <div class="grid-2" id="rogueAppliedShopGrid"></div>
+  </div>
+
+  <!-- ══ TAB: Frontier ══════════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-frontier">
+    <h2>Frontier Legends — Save Editor</h2>
+    <div class="warn">⚠ Edits apply to <strong>legendsData.frontierSaves.MainSave</strong>. Requires an active Frontier save.</div>
+
+    <h3 style="margin:12px 0 8px;font-size:13px;color:#a5d6a7;">Currency &amp; Resources</h3>
+    <div class="grid-2" id="frontierCurrencyGrid"></div>
+
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#a5d6a7;">Sheriff</h3>
+    <div class="grid-2" id="frontierSheriffGrid"></div>
+
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#a5d6a7;">Powers (Health &amp; Stamina Potions)</h3>
+    <div class="grid-2" id="frontierPowersGrid"></div>
+
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#a5d6a7;">Flags</h3>
+    <div id="frontierFlagsGrid" style="display:flex;flex-direction:column;gap:6px;"></div>
   </div>
 
   <!-- ══ TAB: Raw JSON ════════════════════════════════════════════ -->
@@ -843,6 +886,8 @@ function switchTab(name) {
   if (name === 'maps')         renderMaps();
   if (name === 'unlocks'       && !document.getElementById('unlockGrid').children.length) buildUnlocks();
   if (name === 'artifacts'     && !document.getElementById('artifactGrid').children.length) buildArtifacts();
+  if (name === 'roguestats'    && !document.getElementById('rogueStatsGrid').children.length) buildRogueStats();
+  if (name === 'frontier'      && !document.getElementById('frontierCurrencyGrid').children.length) buildFrontier();
 }
 
 // Read inputs back into profile before we destroy their DOM nodes
@@ -883,6 +928,281 @@ function flushHeavy(tab) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// ROGUE STATS & XP SHOP
+// ═══════════════════════════════════════════════════════════════════
+
+// XP shop item definitions: key → { label, max (from save example) }
+const XP_SHOP_ITEMS = {
+  BoostDiscount:               { label: 'Boost Placement Discount (%)',      max: 20 },
+  BoostRerollDiscount:         { label: 'Boost Reroll Discount (%)',          max: 20 },
+  FinalBossHp:                 { label: 'Final Boss HP Reduction (%)',        max: 10 },
+  HeroXp:                      { label: 'Hero XP Bonus (%)',                  max: 20 },
+  LegendaryTiles:              { label: 'Legendary Tiles Per Stage',          max: 2  },
+  MasterDoubleCross:           { label: 'Master Double Cross',                max: 1  },
+  MerchantLegendaryChance:     { label: 'Merchant Legendary Chance (%)',      max: 10 },
+  MerchantRareChance:          { label: 'Merchant Rare Chance (%)',           max: 10 },
+  MinibossScoreReduction:      { label: 'Miniboss Score Reduction (%)',       max: 10 },
+  MinigameScoreReduction:      { label: 'Minigame Score Reduction (%)',       max: 10 },
+  PartySize:                   { label: 'Bonus Party Size',                   max: 5  },
+  RecruitRerolls:              { label: 'Recruit Rerolls',                    max: 2  },
+  RecurringRangs:              { label: 'Recurring Rangs',                    max: 1  },
+  StartCash:                   { label: 'Starting Cash Bonus (%)',            max: 10 },
+  StartLives:                  { label: 'Starting Lives Bonus (%)',           max: 20 },
+  StartingArtifacts:           { label: 'Starting Artifacts',                 max: 3  },
+  StartingTokens:              { label: 'Starting Tokens',                    max: 10 },
+  Tier3andBelowUpgradeDiscount:{ label: 'Tier 1-3 Upgrade Discount (%)',     max: 20 },
+  Tier4andAboveUpgradeDiscount:{ label: 'Tier 4-5 Upgrade Discount (%)',     max: 20 },
+  Wingmonkey:                  { label: 'Wingmonkey',                         max: 1  },
+  DisableTowerIncomeCurse:     { label: 'Disable Tower Income Curse',         max: 1  },
+};
+
+function buildRogueStats() {
+  const rs = profile?.legendsData?.rogueSaves?.MainSave;
+  const ld = profile?.legendsData;
+
+  // ── Run stats ──────────────────────────────────────────────────────
+  const runFields = [
+    { label: 'Current Lives',      path: 'rs.lives',                  type: 'number', min: 0 },
+    { label: 'Max Lives',          path: 'rs.maxLives',               type: 'number', min: 0 },
+    { label: 'Current Stage',      path: 'rs.stage',                  type: 'number', min: 0 },
+    { label: 'XP Earned (run)',    path: 'rs.xpEarned',               type: 'number', min: 0 },
+    { label: 'Loot Choices',       path: 'rs.lootChoices',            type: 'number', min: 1 },
+    { label: 'End-of-Run Rerolls', path: 'rs.endOfGameRerolls',       type: 'number', min: 0 },
+    { label: 'Tower Bans',         path: 'rs.towerBans',              type: 'number', min: 0 },
+    { label: 'MM Reward Queued',   path: 'rs.queuedMonkeyMoneyReward',type: 'number', min: 0 },
+    { label: 'XP Reward Queued',   path: 'rs.queuedRogueXpReward',    type: 'number', min: 0 },
+  ];
+
+  renderLegendSection('rogueStatsGrid', runFields, rs, !rs);
+
+  // ── Legend / global ────────────────────────────────────────────────
+  const legendFields = [
+    { label: 'Legend XP (total)',  path: 'ld.rogueLegendXp',      type: 'number', min: 0 },
+    { label: 'Highest Stage',      path: 'ld.highestStageBeaten', type: 'number', min: 0 },
+    { label: 'Rogue Game ID',      path: 'ld.rogueGameId',        type: 'number', min: 0 },
+  ];
+
+  renderLegendSection('rogueLegendGrid', legendFields, ld, !ld);
+
+  // ── XP Shop: unlocked ──────────────────────────────────────────────
+  renderShopSection('rogueXpShopGrid', ld?.unlockedRogueXpShopItems, key => {
+    if (!ld.unlockedRogueXpShopItems) ld.unlockedRogueXpShopItems = {};
+    ld.unlockedRogueXpShopItems[key] = parseInt(event.target.value) || 0;
+  }, !ld);
+
+  // ── XP Shop: applied ──────────────────────────────────────────────
+  renderShopSection('rogueAppliedShopGrid', rs?.appliedRogueXpShopItems, key => {
+    if (!rs.appliedRogueXpShopItems) rs.appliedRogueXpShopItems = {};
+    rs.appliedRogueXpShopItems[key] = parseInt(event.target.value) || 0;
+  }, !rs);
+}
+
+function renderLegendSection(gridId, fields, obj, missing) {
+  const grid = document.getElementById(gridId);
+  if (missing || !obj) {
+    grid.innerHTML = '<p style="color:#555;font-size:12px;grid-column:1/-1;">No save data found.</p>';
+    return;
+  }
+  grid.innerHTML = '';
+  for (const f of fields) {
+    // Resolve nested path like 'rs.lives' — we just use obj directly since obj IS rs/ld
+    const key = f.path.split('.').pop();
+    const val = obj[key] ?? 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    wrap.innerHTML = `<label>${f.label}</label>`;
+    const inp = document.createElement('input');
+    inp.type = f.type || 'number';
+    inp.min = f.min ?? 0;
+    inp.value = val;
+    inp.addEventListener('change', () => { obj[key] = Number(inp.value) || 0; });
+    wrap.appendChild(inp);
+    grid.appendChild(wrap);
+  }
+}
+
+function renderShopSection(gridId, shopObj, onChange, missing) {
+  const grid = document.getElementById(gridId);
+  if (missing) {
+    grid.innerHTML = '<p style="color:#555;font-size:12px;grid-column:1/-1;">No save data found.</p>';
+    return;
+  }
+  grid.innerHTML = '';
+  for (const [key, def] of Object.entries(XP_SHOP_ITEMS)) {
+    const val = shopObj?.[key] ?? 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    wrap.innerHTML = `<label>${def.label}<span style="color:#555;font-size:10px;margin-left:4px;">(max ${def.max})</span></label>`;
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = 0;
+    inp.max = def.max;
+    inp.value = val;
+    inp.addEventListener('change', () => {
+      const v = Math.min(def.max, Math.max(0, parseInt(inp.value) || 0));
+      inp.value = v;
+      if (!shopObj) return;
+      shopObj[key] = v;
+    });
+    wrap.appendChild(inp);
+    grid.appendChild(wrap);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FRONTIER SAVE EDITOR
+// ═══════════════════════════════════════════════════════════════════
+
+function getFrontierSave() {
+  return profile?.legendsData?.frontierSaves?.MainSave ?? null;
+}
+
+function buildFrontier() {
+  const fs = getFrontierSave();
+  const missing = !fs;
+
+  // ── Currency & resources ───────────────────────────────────────────
+  const currencyFields = [
+    { label: 'Currency (Bananite)',  key: 'currency',       min: 0 },
+    { label: 'Lives',                key: 'lives',          min: 0 },
+    { label: 'Sheriff Morale',       key: 'sheriffMorale',  min: 0, max: 1600 },
+    { label: 'Fishing Rod (1-3)',     key: 'selectedFishingRod', min: 1, max: 3 },
+    { label: 'Difficulty (0=Easy)',   key: 'selectedDifficulty', min: 0, max: 2 },
+  ];
+  renderFrontierFields('frontierCurrencyGrid', currencyFields, fs, missing);
+
+  // Also sync Currency (capital C) = currency whenever currency changes
+  if (fs) {
+    const currInp = document.querySelector('#frontierCurrencyGrid input');
+    if (currInp) {
+      const orig = currInp.onchange;
+      currInp.addEventListener('change', () => {
+        fs.Currency = Number(currInp.value) || 0;
+        fs.CurrencyActual = Number(currInp.value) || 0;
+      });
+    }
+  }
+
+  // ── Sheriff ────────────────────────────────────────────────────────
+  const sheriffDiv = document.getElementById('frontierSheriffGrid');
+  if (missing || !fs) {
+    sheriffDiv.innerHTML = '<p style="color:#555;font-size:12px;">No Frontier save found.</p>';
+  } else {
+    sheriffDiv.innerHTML = '';
+    // Custom name (string)
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'field';
+    nameWrap.innerHTML = `<label>Sheriff Name</label>`;
+    const nameInp = document.createElement('input');
+    nameInp.type = 'text';
+    nameInp.value = fs.sheriffCustomName ?? '';
+    nameInp.addEventListener('change', () => { fs.sheriffCustomName = nameInp.value; });
+    nameWrap.appendChild(nameInp);
+    sheriffDiv.appendChild(nameWrap);
+
+    // Badge flag
+    const badgeWrap = document.createElement('div');
+    badgeWrap.className = 'field';
+    const badgeCb = document.createElement('input');
+    badgeCb.type = 'checkbox';
+    badgeCb.checked = fs.hasGainedSheriffBadge === true;
+    badgeCb.addEventListener('change', () => { fs.hasGainedSheriffBadge = badgeCb.checked; });
+    const badgeLabel = document.createElement('label');
+    badgeLabel.style.display = 'flex';
+    badgeLabel.style.gap = '6px';
+    badgeLabel.style.alignItems = 'center';
+    badgeLabel.appendChild(badgeCb);
+    badgeLabel.appendChild(document.createTextNode('Has Sheriff Badge'));
+    badgeWrap.appendChild(badgeLabel);
+    sheriffDiv.appendChild(badgeWrap);
+  }
+
+  // ── Powers ─────────────────────────────────────────────────────────
+  const powersDiv = document.getElementById('frontierPowersGrid');
+  if (missing || !fs) {
+    powersDiv.innerHTML = '<p style="color:#555;font-size:12px;">No Frontier save found.</p>';
+  } else {
+    powersDiv.innerHTML = '';
+    const powers = fs.powersData ?? {};
+    for (const [pKey, pLabel] of [['HealthPotion','Health Potions'],['StaminaPotion','Stamina Potions']]) {
+      const qty = powers[pKey]?.quantity ?? 0;
+      const wrap = document.createElement('div');
+      wrap.className = 'field';
+      wrap.innerHTML = `<label>${pLabel}</label>`;
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.min = 0;
+      inp.value = qty;
+      inp.addEventListener('change', () => {
+        if (!fs.powersData) fs.powersData = {};
+        if (!fs.powersData[pKey]) fs.powersData[pKey] = { quantity: 0, isNew: false };
+        fs.powersData[pKey].quantity = Number(inp.value) || 0;
+      });
+      wrap.appendChild(inp);
+      powersDiv.appendChild(wrap);
+    }
+  }
+
+  // ── Flags ──────────────────────────────────────────────────────────
+  const flagsDiv = document.getElementById('frontierFlagsGrid');
+  if (missing || !fs) {
+    flagsDiv.innerHTML = '<p style="color:#555;font-size:12px;">No Frontier save found.</p>';
+  } else {
+    flagsDiv.innerHTML = '';
+    const flags = [
+      { key: 'isEliteMode',         label: 'Elite Mode Active' },
+      { key: 'isCampaignCompleted', label: 'Campaign Completed' },
+      { key: 'isNightTime',         label: 'Night Time' },
+      { key: 'seenFishing',         label: 'Has Seen Fishing' },
+      { key: 'hasSeenMovementTutorial', label: 'Has Seen Movement Tutorial' },
+    ];
+    for (const f of flags) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = fs[f.key] === true;
+      cb.style.accentColor = '#a5d6a7';
+      cb.addEventListener('change', () => { fs[f.key] = cb.checked; });
+      row.appendChild(cb);
+      row.appendChild(document.createTextNode(f.label));
+      flagsDiv.appendChild(row);
+    }
+  }
+}
+
+function renderFrontierFields(gridId, fields, obj, missing) {
+  const grid = document.getElementById(gridId);
+  if (missing || !obj) {
+    grid.innerHTML = '<p style="color:#555;font-size:12px;grid-column:1/-1;">No Frontier save found.</p>';
+    return;
+  }
+  grid.innerHTML = '';
+  for (const f of fields) {
+    const val = obj[f.key] ?? 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    let labelText = f.label;
+    if (f.max !== undefined) labelText += ` (max ${f.max})`;
+    wrap.innerHTML = `<label>${labelText}</label>`;
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = f.min ?? 0;
+    if (f.max !== undefined) inp.max = f.max;
+    inp.value = val;
+    inp.addEventListener('change', () => {
+      let v = Number(inp.value) || 0;
+      if (f.max !== undefined) v = Math.min(f.max, v);
+      if (f.min !== undefined) v = Math.max(f.min, v);
+      inp.value = v;
+      obj[f.key] = v;
+    });
+    wrap.appendChild(inp);
+    grid.appendChild(wrap);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ROGUE ARTIFACTS
 // ═══════════════════════════════════════════════════════════════════
