@@ -116,6 +116,18 @@
   #togglePreview { font-size:11px; color:#555; cursor:pointer; background:none; border:none; padding:0; font-family:monospace; }
   #togglePreview:hover { color:#aaa; }
 
+  /* ── Profile Stats ── */
+  #psGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; align-items:start; }
+  .ps-section { background:#1e1e1e; border:1px solid #333; border-radius:6px; overflow:hidden; }
+  .ps-section-title { background:#252525; color:#9cdcfe; font-size:12px; font-weight:bold; padding:7px 12px; letter-spacing:.5px; border-bottom:1px solid #333; }
+  .ps-row { display:flex; align-items:center; justify-content:space-between; padding:5px 12px; border-bottom:1px solid #2a2a2a; gap:8px; }
+  .ps-row:last-child { border-bottom:none; }
+  .ps-row:hover { background:#252525; }
+  .ps-label { font-size:12px; color:#c8c8c8; flex:1; min-width:0; }
+  .ps-input { background:#2a2a2a; border:1px solid #444; border-radius:3px; color:#f0c040; font-family:monospace; font-size:12px; padding:3px 6px; width:120px; text-align:right; }
+  .ps-input:focus { outline:none; border-color:#f0c040; }
+  .ps-value-text { font-family:monospace; font-size:12px; color:#4ec9b0; text-align:right; min-width:120px; }
+
   /* ── Map Saves ── */
   .ms-map-entry { padding:6px 8px; border-radius:4px; cursor:pointer; font-size:12px; color:#888; border:1px solid transparent; margin-bottom:3px; }
   .ms-map-entry:hover { background:#2a2a2a; color:#ccc; }
@@ -206,6 +218,7 @@
     <div class="tab" onclick="switchTab('frontier')">Frontier</div>
     <div class="tab" onclick="switchTab('trophystore')">Trophy Store</div>
     <div class="tab" onclick="switchTab('mapsaves')">Map Saves</div>
+    <div class="tab" onclick="switchTab('profilestats')">Profile Stats</div>
     <div class="tab" onclick="switchTab('raw')">Raw JSON</div>
   </div>
 
@@ -511,6 +524,13 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- ══ TAB: Profile Stats ══════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-profilestats">
+    <h2>Profile Stats</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:12px;">These are the stats shown in-game on the Profile Stats screen. Fields map to exact JSON paths in the save file.</p>
+    <div id="psGrid"></div>
   </div>
 
   <!-- ══ TAB: Raw JSON ════════════════════════════════════════════ -->
@@ -987,6 +1007,7 @@ function switchTab(name) {
   if (name === 'frontier'      && !document.getElementById('frontierCurrencyGrid').children.length) buildFrontier();
   if (name === 'trophystore'   && !document.getElementById('trophyGrid').children.length) buildTrophyStore();
   if (name === 'mapsaves'      && !document.getElementById('msSaveList').children.length) buildMapSaves();
+  if (name === 'profilestats'  && !document.getElementById('psGrid').children.length) buildProfileStats();
 }
 
 // Read inputs back into profile before we destroy their DOM nodes
@@ -2643,6 +2664,180 @@ zone.addEventListener('drop', e => {
   e.preventDefault(); zone.classList.remove('drag');
   if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// PROFILE STATS
+// ═══════════════════════════════════════════════════════════════════
+function psGet(path) {
+  return path.split('.').reduce((o, k) => (o != null ? o[k] : undefined), profile);
+}
+function psSet(path, val) {
+  const keys = path.split('.'), last = keys.pop();
+  const obj  = keys.reduce((o, k) => (o != null ? o[k] : undefined), profile);
+  if (obj != null) obj[last] = val;
+}
+
+// Highest round from mapInfo medal encoding: bits 10-25 = round
+function psMaxModeRound(modeKey) {
+  const maps = profile.mapInfo?.maps ?? {};
+  let best = 0;
+  for (const map of Object.values(maps)) {
+    for (const diff of Object.values(map.difficult ?? {})) {
+      const v = diff.modes?.[modeKey];
+      if (v != null) { const r = (v >> 10) & 0xFFFF; if (r > best) best = r; }
+    }
+  }
+  return best;
+}
+function psSetModeRound(modeKey, newRound) {
+  const maps = profile.mapInfo?.maps ?? {};
+  for (const map of Object.values(maps)) {
+    for (const diff of Object.values(map.difficult ?? {})) {
+      if (diff.modes?.[modeKey] != null) {
+        const old = diff.modes[modeKey];
+        // preserve lower 10 completion/medal bits, replace round bits 10-25
+        diff.modes[modeKey] = (old & 0x3FF) | ((newRound & 0xFFFF) << 10) | (old & 0xFC000000);
+      }
+    }
+  }
+}
+
+function psBestTower() {
+  const xp = profile.towerXp ?? {};
+  let best = '', bestXp = -1;
+  for (const [k, v] of Object.entries(xp)) { if (v > bestXp) { bestXp = v; best = k; } }
+  return { name: best, xp: bestXp };
+}
+
+function psSection(parent, title) {
+  const sec = document.createElement('div');
+  sec.className = 'ps-section';
+  const h = document.createElement('div');
+  h.className = 'ps-section-title';
+  h.textContent = title;
+  sec.appendChild(h);
+  parent.appendChild(sec);
+  return sec;
+}
+
+function psRow(parent, label, getValue, setValue, isFloat) {
+  const row = document.createElement('div');
+  row.className = 'ps-row';
+  const lbl = document.createElement('span');
+  lbl.className = 'ps-label';
+  lbl.textContent = label;
+  const inp = document.createElement('input');
+  inp.className = 'ps-input';
+  inp.type = 'number';
+  inp.min = '0';
+  const cur = getValue();
+  inp.value = (cur === undefined || cur === null) ? 0 : (isFloat ? cur : Math.round(cur));
+  inp.addEventListener('change', () => setValue(isFloat ? parseFloat(inp.value)||0 : Math.round(parseFloat(inp.value)||0)));
+  row.appendChild(lbl);
+  row.appendChild(inp);
+  parent.appendChild(row);
+  return inp;
+}
+
+function psRowText(parent, label, value) {
+  const row = document.createElement('div');
+  row.className = 'ps-row';
+  const lbl = document.createElement('span');
+  lbl.className = 'ps-label';
+  lbl.textContent = label;
+  const val = document.createElement('span');
+  val.className = 'ps-value-text';
+  val.textContent = value ?? '—';
+  row.appendChild(lbl);
+  row.appendChild(val);
+  parent.appendChild(row);
+}
+
+function buildProfileStats() {
+  const grid = document.getElementById('psGrid');
+  grid.innerHTML = '';
+
+  const bs = () => profile.analyticsKonFuze?.basicStats;
+
+  // ── General ──────────────────────────────────────────────────
+  const g = psSection(grid, '🎮 General');
+  psRow(g, 'Games Played',                  () => bs()?.gamesPlayed,              v => { if(bs()) bs().gamesPlayed=v; });
+  psRow(g, 'Games Won',                     () => psGet('completedGame'),          v => psSet('completedGame',v));
+  psRow(g, 'Highest Round (All Time)',       () => psGet('highestSeenRound'),       v => psSet('highestSeenRound',v));
+  psRow(g, 'Highest Round (Current Version)',() => psGet('highestSeenRoundCurrentVersion'), v => psSet('highestSeenRoundCurrentVersion',v));
+  psRow(g, 'Highest Round CHIMPS',          () => psMaxModeRound('SuperChimps'),   v => psSetModeRound('SuperChimps',v));
+  psRow(g, 'Highest Round Deflation',       () => psMaxModeRound('Deflation'),     v => psSetModeRound('Deflation',v));
+  psRow(g, 'Collection Chests Opened',      () => psGet('collectionEventCratesOpened'), v => psSet('collectionEventCratesOpened',v));
+  psRow(g, 'Golden Bloons Popped',          () => psGet('goldenBloonsPopped'),     v => psSet('goldenBloonsPopped',v));
+  psRow(g, 'Monkey Team Wins',              () => psGet('monkeyTeamsWins'),        v => psSet('monkeyTeamsWins',v));
+  psRow(g, 'Odysseys Completed',            () => psGet('totalCompletedOdysseys'), v => psSet('totalCompletedOdysseys',v));
+  psRow(g, 'Races Entered',                 () => psGet('totalRacesEntered'),      v => psSet('totalRacesEntered',v));
+  psRow(g, 'Challenges Completed',          () => psGet('totalDailyChallengesCompleted'), v => psSet('totalDailyChallengesCompleted',v));
+  psRow(g, 'Daily Reward Chests Opened',    () => psGet('dailyRewardIndex'),       v => psSet('dailyRewardIndex',v));
+  psRow(g, 'Lifetime Trophies',             () => psGet('lifetimeTrophies'),       v => psSet('lifetimeTrophies',v));
+  psRow(g, 'Trophies Spent',               () => psGet('trophiesSpent'),           v => psSet('trophiesSpent',v));
+
+  // ── Most Experienced Monkey ───────────────────────────────────
+  const me = psSection(grid, '🐒 Most Experienced Monkey');
+  const best = psBestTower();
+  psRowText(me, 'Most Experienced Monkey', best.name || '—');
+  psRowText(me, 'Most Experienced Monkey XP', best.xp > 0 ? Math.round(best.xp).toLocaleString() : '0');
+  // Per-tower XP editing
+  const txp = profile.towerXp ?? {};
+  for (const [tower, xp] of Object.entries(txp).sort((a,b) => b[1]-a[1])) {
+    psRow(me, tower,
+      () => profile.towerXp?.[tower] ?? 0,
+      v  => { if(profile.towerXp) profile.towerXp[tower] = v; },
+      true);
+  }
+
+  // ── Bloon Pops ────────────────────────────────────────────────
+  const bp = psSection(grid, '🎈 Bloon Pops');
+  psRow(bp, 'Total Pop Count',            () => bs()?.bloonsPopped,        v => { if(bs()) bs().bloonsPopped=v; });
+  psRow(bp, 'Camo Bloons Popped',         () => bs()?.camosPopped,         v => { if(bs()) bs().camosPopped=v; });
+  psRow(bp, 'Ceramic Bloons Popped',      () => bs()?.ceramicsPopped,      v => { if(bs()) bs().ceramicsPopped=v; });
+  psRow(bp, 'Lead Bloons Popped',         () => bs()?.leadPopped,          v => { if(bs()) bs().leadPopped=v; });
+  psRow(bp, 'Purple Bloons Popped',       () => bs()?.purplesPopped,       v => { if(bs()) bs().purplesPopped=v; });
+  psRow(bp, 'Regrow Bloons Popped',       () => bs()?.regrowPopped,        v => { if(bs()) bs().regrowPopped=v; });
+  psRow(bp, 'Fortified Bloons Popped',    () => bs()?.fortifiedPopped,     v => { if(bs()) bs().fortifiedPopped=v; });
+  psRow(bp, 'Bloons Leaked',              () => bs()?.bloonsLeaked,        v => { if(bs()) bs().bloonsLeaked=v; });
+  psRow(bp, 'Necro Bloons Reanimated',    () => psGet('analyticsKonFuze.necroBloonsReanimated'),  v => psSet('analyticsKonFuze.necroBloonsReanimated',v));
+  psRow(bp, 'Bloons Revealed by Shimmer', () => psGet('analyticsKonFuze.bloonsRevealedByShimmer'),v => psSet('analyticsKonFuze.bloonsRevealedByShimmer',v));
+  psRow(bp, 'Rainbow Bloons w/ Magic',   () => psGet('analyticsKonFuze.rainbowBloonsPoppedWithMagic'), v => psSet('analyticsKonFuze.rainbowBloonsPoppedWithMagic',v));
+  psRow(bp, 'Bloon Pops on Peninsula',    () => psGet('analyticsKonFuze.bloonPopsOnPeninsula'),   v => psSet('analyticsKonFuze.bloonPopsOnPeninsula',v));
+
+  // ── MOAB-Class ────────────────────────────────────────────────
+  const mc = psSection(grid, '🟦 MOAB-Class');
+  psRow(mc, 'MOABs Popped',         () => bs()?.moabsPopped,        v => { if(bs()) bs().moabsPopped=v; });
+  psRow(mc, 'BFBs Popped',          () => bs()?.bfbsPopped,         v => { if(bs()) bs().bfbsPopped=v; });
+  psRow(mc, 'ZOMGs Popped',         () => bs()?.zomgsPopped,        v => { if(bs()) bs().zomgsPopped=v; });
+  psRow(mc, 'DDTs Popped',          () => bs()?.ddtsPopped,         v => { if(bs()) bs().ddtsPopped=v; });
+  psRow(mc, 'BADs Popped',          () => bs()?.badsPopped,         v => { if(bs()) bs().badsPopped=v; });
+  psRow(mc, 'Bosses Popped',        () => bs()?.bossesPopped,       v => { if(bs()) bs().bossesPopped=v; });
+  psRow(mc, 'Damage Done to Bosses',() => bs()?.damageDoneToBosses, v => { if(bs()) bs().damageDoneToBosses=v; }, true);
+
+  // ── Economy ───────────────────────────────────────────────────
+  const ec = psSection(grid, '💰 Economy');
+  psRow(ec, 'Cash Generated',   () => bs()?.cashEarned,                         v => { if(bs()) bs().cashEarned=v; }, true);
+  psRow(ec, 'Cash Gifted',      () => psGet('analyticsKonFuze.coopCashGiven'),   v => psSet('analyticsKonFuze.coopCashGiven',v), true);
+
+  // ── Monkeys & Powers ──────────────────────────────────────────
+  const mp = psSection(grid, '🏗️ Monkeys & Powers');
+  psRow(mp, 'Monkeys Placed',          () => bs()?.totalTowersPlaced,       v => { if(bs()) bs().totalTowersPlaced=v; });
+  psRow(mp, 'Abilities Used',          () => bs()?.totalAbilitiesActivated, v => { if(bs()) bs().totalAbilitiesActivated=v; });
+  psRow(mp, 'Powers Used',             () => bs()?.totalPowersActivated,    v => { if(bs()) bs().totalPowersActivated=v; });
+  psRow(mp, 'Insta Monkeys Used',      () => bs()?.instaMonkeysUsed,        v => { if(bs()) bs().instaMonkeysUsed=v; });
+  psRow(mp, 'Total Upgrades Purchased',() => bs()?.totalUpgradesPurchased,  v => { if(bs()) bs().totalUpgradesPurchased=v; });
+  psRow(mp, 'Transforming Tonics Used',
+    () => bs()?.abilitiesActivatedByName?.['Total Transforming Tonic'] ?? 0,
+    v  => { if(bs()?.abilitiesActivatedByName) bs().abilitiesActivatedByName['Total Transforming Tonic']=v; });
+
+  // ── Co-op ─────────────────────────────────────────────────────
+  const co = psSection(grid, '🤝 Co-op');
+  psRow(co, 'Total Co-op Pop Count', () => psGet('analyticsKonFuze.coopBloonsPopped'), v => psSet('analyticsKonFuze.coopBloonsPopped',v));
+  psRow(co, 'Co-op Maps Beaten',     () => psGet('analyticsKonFuze.coopMapsBeaten'),   v => psSet('analyticsKonFuze.coopMapsBeaten',v));
+  psRow(co, 'Hosted Co-op Games',    () => psGet('hostedCoopGames'),                   v => psSet('hostedCoopGames',v));
+}
 </script>
 </body>
 </html>
